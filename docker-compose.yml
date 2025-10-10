@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  minerva:
+    build: .
+    container_name: minerva
+    environment:
+      - APP_ENV=production
+      - LOG_LEVEL=info
+      - LOG_FORMAT=json
+      - DATABASE_PATH=/data/minerva.db
+    env_file:
+      - .env
+    volumes:
+      - minerva_data:/data
+      - ./logs:/var/log/minerva
+    restart: "no"  # Batch job - don't restart automatically
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - minerva_network
+
+  # Optional: Add development services
+  ollama:
+    image: ollama/ollama:latest
+    container_name: minerva_ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - minerva_network
+    profiles: ["dev"]
+
+volumes:
+  minerva_data:
+    driver: local
+  ollama_data:
+    driver: local
+
+networks:
+  minerva_network:
+    driver: bridge
