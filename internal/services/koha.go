@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/saaga/minerva/internal/config"
+	"github.com/saaga0h/minerva/internal/config"
 	"github.com/sirupsen/logrus"
 )
 

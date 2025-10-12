@@ -7,11 +7,11 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/saaga/minerva/internal/config"
-	"github.com/saaga/minerva/internal/database"
-	"github.com/saaga/minerva/internal/pipeline"
-	"github.com/saaga/minerva/internal/services"
-	"github.com/saaga/minerva/pkg/logger"
+	"github.com/saaga0h/minerva/internal/config"
+	"github.com/saaga0h/minerva/internal/database"
+	"github.com/saaga0h/minerva/internal/pipeline"
+	"github.com/saaga0h/minerva/internal/services"
+	"github.com/saaga0h/minerva/pkg/logger"
 )
 
 func main() {

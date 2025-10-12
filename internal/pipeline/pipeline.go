@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/saaga/minerva/internal/database"
-	"github.com/saaga/minerva/internal/services"
+	"github.com/saaga0h/minerva/internal/database"
+	"github.com/saaga0h/minerva/internal/services"
 	"github.com/sirupsen/logrus"
 )
 

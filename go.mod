@@ -1,4 +1,4 @@
-module github.com/saaga/minerva
+module github.com/saaga0h/minerva
 
 go 1.23.0
 
