@@ -346,7 +346,7 @@ LOG_LEVEL=debug make dev
 
 ## Future Enhancements
 
-- Multi-pass LLM analysis for deeper understanding
+- ~~Multi-pass LLM analysis for deeper understanding~~
 - Semantic similarity scoring using embeddings
 - Feedback loop for recommendation quality
 - Web UI for browsing recommendations
