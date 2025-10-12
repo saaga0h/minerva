@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
+	"github.com/go-shiori/go-readability"
 	"github.com/saaga/minerva/internal/config"
 	"github.com/sirupsen/logrus"
 )
@@ -39,6 +40,44 @@ func NewContentExtractor(cfg config.ExtractorConfig) *ContentExtractor {
 func (e *ContentExtractor) ExtractContent(url string) (*ExtractedContent, error) {
 	e.logger.WithField("url", url).Debug("Extracting content from URL")
 
+	// Try go-readability first
+	article, err := e.extractWithReadability(url)
+	if err == nil && len(article.Content) > 500 {
+		e.logger.WithFields(logrus.Fields{
+			"url":            url,
+			"method":         "readability",
+			"title_length":   len(article.Title),
+			"content_length": len(article.Content),
+		}).Debug("Content extracted successfully")
+		return article, nil
+	}
+
+	e.logger.WithError(err).Debug("Readability extraction failed or insufficient content, falling back to manual extraction")
+
+	// Fallback to manual extraction
+	return e.extractManually(url)
+}
+
+// extractWithReadability uses go-readability for generic extraction
+func (e *ContentExtractor) extractWithReadability(url string) (*ExtractedContent, error) {
+	// FromURL is the correct method
+	article, err := readability.FromURL(url, time.Duration(e.config.Timeout)*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("readability parse failed: %w", err)
+	}
+
+	// Clean content for Ollama
+	cleanContent := e.cleanForOllama(article.TextContent)
+
+	return &ExtractedContent{
+		Title:   article.Title,
+		Content: cleanContent,
+		URL:     url,
+	}, nil
+}
+
+// extractManually is the fallback manual extraction method
+func (e *ContentExtractor) extractManually(url string) (*ExtractedContent, error) {
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
@@ -57,7 +96,6 @@ func (e *ContentExtractor) ExtractContent(url string) (*ExtractedContent, error)
 		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
 	}
 
-	// Limit response size to prevent memory issues
 	limitedReader := io.LimitReader(resp.Body, e.config.MaxSize)
 
 	doc, err := goquery.NewDocumentFromReader(limitedReader)
@@ -69,17 +107,13 @@ func (e *ContentExtractor) ExtractContent(url string) (*ExtractedContent, error)
 		URL: url,
 	}
 
-	// Extract title
 	content.Title = e.extractTitle(doc)
-
-	// Extract main content
 	content.Content = e.extractMainContent(doc)
-
-	// Clean and validate content for Ollama
 	content.Content = e.cleanForOllama(content.Content)
 
 	e.logger.WithFields(logrus.Fields{
 		"url":            url,
+		"method":         "manual",
 		"title_length":   len(content.Title),
 		"content_length": len(content.Content),
 	}).Debug("Content extracted successfully")
@@ -89,7 +123,6 @@ func (e *ContentExtractor) ExtractContent(url string) (*ExtractedContent, error)
 
 // extractTitle tries to find the best title for the article
 func (e *ContentExtractor) extractTitle(doc *goquery.Document) string {
-	// Try various title selectors in order of preference
 	selectors := []string{
 		"h1",
 		"title",
@@ -113,7 +146,7 @@ func (e *ContentExtractor) extractMainContent(doc *goquery.Document) string {
 	// Remove unwanted elements
 	doc.Find("script, style, nav, header, footer, aside, .advertisement, .ads, .social-share").Remove()
 
-	// Try various content selectors in order of preference
+	// Try various content selectors
 	contentSelectors := []string{
 		"article",
 		".content",
@@ -135,7 +168,6 @@ func (e *ContentExtractor) extractMainContent(doc *goquery.Document) string {
 		}
 	}
 
-	// Fallback: try to get content from body, excluding navigation and sidebar
 	if content == "" {
 		doc.Find("nav, .nav, .navigation, .sidebar, .menu, header, footer").Remove()
 		content = doc.Find("body").Text()
@@ -144,27 +176,25 @@ func (e *ContentExtractor) extractMainContent(doc *goquery.Document) string {
 	return strings.TrimSpace(content)
 }
 
-// cleanForOllama cleans and formats content to be valid for Ollama JSON payload
+// cleanForOllama cleans and formats content for Ollama
 func (e *ContentExtractor) cleanForOllama(content string) string {
 	// Remove excessive whitespace
 	content = regexp.MustCompile(`\s+`).ReplaceAllString(content, " ")
 
-	// Remove or escape problematic characters for JSON
-	content = strings.ReplaceAll(content, "\n", " ")
-	content = strings.ReplaceAll(content, "\r", " ")
-	content = strings.ReplaceAll(content, "\t", " ")
-
 	// Remove control characters
 	content = regexp.MustCompile(`[\x00-\x1f\x7f]`).ReplaceAllString(content, "")
 
-	// Escape quotes for JSON safety
-	content = strings.ReplaceAll(content, `"`, `\"`)
-	content = strings.ReplaceAll(content, `\`, `\\`)
-
-	// Trim and limit length to reasonable size for LLM processing
+	// Trim and limit length, trying to cut at sentence boundary
 	content = strings.TrimSpace(content)
 	if len(content) > 10000 {
-		content = content[:10000] + "..."
+		truncated := content[:10000]
+		// Try to find last sentence before 10k
+		lastPeriod := strings.LastIndex(truncated, ". ")
+		if lastPeriod > 8000 {
+			content = truncated[:lastPeriod+1]
+		} else {
+			content = truncated + "..."
+		}
 	}
 
 	return content

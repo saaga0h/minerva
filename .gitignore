@@ -56,3 +56,6 @@ vendor/
 
 # Runtime
 *.pid
+
+# Debug files
+debug/*

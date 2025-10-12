@@ -17,6 +17,7 @@ import (
 func main() {
 	var configPath = flag.String("config", "", "Path to configuration file")
 	var dryRun = flag.Bool("dry-run", false, "Run without making external requests (development mode)")
+
 	flag.Parse()
 
 	// Initialize logger
@@ -60,6 +61,7 @@ func main() {
 		Ntfy:        ntfy,
 		Database:    db,
 		DryRun:      *dryRun,
+		DebugOllama: cfg.App.DebugOllama,
 		Logger:      log,
 	})
 	// Setup graceful shutdown

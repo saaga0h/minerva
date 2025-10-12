@@ -21,9 +21,10 @@ type Config struct {
 }
 
 type AppConfig struct {
-	Name    string `json:"name" env:"APP_NAME" default:"minerva"`
-	Version string `json:"version" env:"APP_VERSION" default:"1.0.0"`
-	Env     string `json:"env" env:"APP_ENV" default:"production"`
+	Name        string `json:"name" env:"APP_NAME" default:"minerva"`
+	Version     string `json:"version" env:"APP_VERSION" default:"1.0.0"`
+	Env         string `json:"env" env:"APP_ENV" default:"production"`
+	DebugOllama bool   `env:"DEBUG_OLLAMA" envDefault:"false"`
 }
 
 type LogConfig struct {
@@ -93,9 +94,10 @@ func Load(configPath string) (*Config, error) {
 
 	config := &Config{
 		App: AppConfig{
-			Name:    getEnv("APP_NAME", "minerva"),
-			Version: getEnv("APP_VERSION", "1.0.0"),
-			Env:     getEnv("APP_ENV", "production"),
+			Name:        getEnv("APP_NAME", "minerva"),
+			Version:     getEnv("APP_VERSION", "1.0.0"),
+			Env:         getEnv("APP_ENV", "production"),
+			DebugOllama: getEnv("DEBUG_OLLAMA", "false") == "true",
 		},
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),

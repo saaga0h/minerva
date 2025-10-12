@@ -147,47 +147,7 @@ make docker-dev
 
 ## Configuration
 
-Create `.env.dev` or `.env`:
-
-```bash
-# Application
-APP_ENV=production
-LOG_LEVEL=info
-DATABASE_PATH=./data/minerva.db
-
-# FreshRSS (Fever API)
-FRESHRSS_BASE_URL=https://rss.example.com/api/fever.php?api
-FRESHRSS_API_KEY=your_fever_api_key
-FRESHRSS_TIMEOUT=30
-
-# Ollama (Local LLM)
-OLLAMA_BASE_URL=http://localhost:11434
-OLLAMA_MODEL=mixtral:8x7b
-OLLAMA_TIMEOUT=300
-OLLAMA_MAX_TOKENS=2048
-OLLAMA_TEMPERATURE=0.7
-
-# OpenLibrary
-OPENLIBRARY_TIMEOUT=30
-
-# Content Extractor
-EXTRACTOR_USER_AGENT=Minerva/1.0
-EXTRACTOR_TIMEOUT=30
-EXTRACTOR_MAX_SIZE=10485760
-
-# Koha (Optional)
-KOHA_BASE_URL=https://library.example.com
-KOHA_USERNAME=minerva
-KOHA_PASSWORD=your_password
-KOHA_TIMEOUT=30
-
-# Ntfy (Optional)
-NTFY_BASE_URL=https://ntfy.example.com
-NTFY_TOPIC=minerva
-NTFY_TOKEN=your_token
-NTFY_PRIORITY=default
-NTFY_ENABLED=true
-```
+Create `.env.dev` or `.env`, see .env.example for details
 
 ### Configuration Reference
 
@@ -201,6 +161,16 @@ NTFY_ENABLED=true
 | `OLLAMA_MODEL` | Model name | mixtral:8x7b |
 | `KOHA_BASE_URL` | Library API endpoint | - |
 | `NTFY_TOPIC` | Notification topic | - |
+
+### Debug Settings
+
+**DEBUG_OLLAMA**: When enabled, writes detailed multi-pass analysis files to `./debug/` directory:
+- `article-{id}-pass1-*.txt` - Domain classification
+- `article-{id}-pass2-*.txt` - Entity extraction  
+- `article-{id}-pass3-*.txt` - Concept extraction
+- `article-{id}-complete.json` - Combined analysis
+```bash
+DEBUG_OLLAMA=true make dev
 
 ## Development
 

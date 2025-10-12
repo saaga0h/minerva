@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/saaga/minerva/internal/config"
@@ -39,6 +42,31 @@ type ProcessedContent struct {
 	Insights string   `json:"insights"`
 }
 
+// Multi-pass results
+type MultiPassResult struct {
+	Pass1 ClassificationResult `json:"pass1"`
+	Pass2 EntityResult         `json:"pass2"`
+	Pass3 ConceptResult        `json:"pass3"`
+}
+
+type ClassificationResult struct {
+	Domain string `json:"domain"`
+	Type   string `json:"type"`
+	Topic  string `json:"topic"`
+}
+
+type EntityResult struct {
+	Facilities []string `json:"facilities"`
+	People     []string `json:"people"`
+	Locations  []string `json:"locations"`
+	Phenomena  []string `json:"phenomena"`
+}
+
+type ConceptResult struct {
+	Concepts      []string `json:"concepts"`
+	RelatedTopics []string `json:"related_topics"`
+}
+
 func NewOllama(cfg config.OllamaConfig) *Ollama {
 	return &Ollama{
 		config: cfg,
@@ -49,37 +77,258 @@ func NewOllama(cfg config.OllamaConfig) *Ollama {
 	}
 }
 
-// ProcessContent sends content to Ollama for analysis and returns structured metadata
-func (o *Ollama) ProcessContent(title, content string) (*ProcessedContent, error) {
+// ProcessContentMultiPass performs multi-pass analysis with optional debugging
+func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, debug bool) (*MultiPassResult, error) {
 	o.logger.WithFields(logrus.Fields{
-		"title":          title,
-		"content_length": len(content),
-	}).Debug("Processing content with Ollama")
+		"article_id": articleID,
+		"title":      title,
+		"debug":      debug,
+	}).Info("Starting multi-pass content analysis")
 
-	// Create comprehensive prompt for analysis
-	prompt := o.buildAnalysisPrompt(title, content)
+	if debug {
+		if err := os.MkdirAll("./debug", 0755); err != nil {
+			o.logger.WithError(err).Warn("Failed to create debug directory")
+		}
+	}
+
+	result := &MultiPassResult{}
+
+	// Pass 1: Classify the article
+	o.logger.Debug("Pass 1: Classifying article")
+	pass1, err := o.classifyArticle(title, content, articleID, debug)
+	if err != nil {
+		return nil, fmt.Errorf("pass 1 failed: %w", err)
+	}
+	result.Pass1 = pass1
+
+	// Pass 2: Extract entities (using Pass 1 context)
+	o.logger.WithField("domain", pass1.Domain).Debug("Pass 2: Extracting entities")
+	pass2, err := o.extractEntities(title, content, pass1, articleID, debug)
+	if err != nil {
+		return nil, fmt.Errorf("pass 2 failed: %w", err)
+	}
+	result.Pass2 = pass2
+
+	// Pass 3: Extract concepts (using Pass 1 + 2 context)
+	o.logger.Debug("Pass 3: Extracting concepts")
+	pass3, err := o.extractConcepts(title, content, pass1, pass2, articleID, debug)
+	if err != nil {
+		return nil, fmt.Errorf("pass 3 failed: %w", err)
+	}
+	result.Pass3 = pass3
+
+	o.logger.WithFields(logrus.Fields{
+		"article_id":     articleID,
+		"domain":         pass1.Domain,
+		"entities":       len(pass2.Facilities) + len(pass2.People) + len(pass2.Locations) + len(pass2.Phenomena),
+		"concepts":       len(pass3.Concepts),
+		"related_topics": len(pass3.RelatedTopics),
+	}).Info("Multi-pass analysis completed")
+
+	if debug {
+		// Save combined result
+		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-complete.json", articleID), prettyJSON, 0644)
+	}
+
+	return result, nil
+}
+
+// classifyArticle - Pass 1: Domain and topic classification
+func (o *Ollama) classifyArticle(title, content string, articleID int, debug bool) (ClassificationResult, error) {
+	prompt := fmt.Sprintf(`Classify this article. Output ONLY valid JSON, no other text.
+
+Title: %s
+
+Content: %s
+
+Output JSON format:
+{
+  "domain": "physics|climate|programming|medicine|biology|astronomy|other",
+  "type": "discovery|review|tutorial|opinion|news",
+  "topic": "brief one-sentence summary"
+}
+
+JSON:`, title, content)
+
+	if debug {
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass1-prompt.txt", articleID), []byte(prompt), 0644)
+	}
 
 	response, err := o.generateCompletion(prompt)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate completion: %w", err)
+		return ClassificationResult{}, err
 	}
 
-	// Parse the structured response
-	processed, err := o.parseStructuredResponse(response)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse Ollama response: %w", err)
+	if debug {
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass1-response.txt", articleID), []byte(response), 0644)
+	}
+
+	var result ClassificationResult
+	cleanJSON := o.extractJSON(response)
+
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		if debug {
+			os.WriteFile(fmt.Sprintf("./debug/article-%d-pass1-ERROR.txt", articleID),
+				[]byte(fmt.Sprintf("Parse error: %s\n\nClean JSON attempted:\n%s", err.Error(), cleanJSON)), 0644)
+		}
+		return ClassificationResult{}, fmt.Errorf("failed to parse classification: %w", err)
+	}
+
+	if debug {
+		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass1-parsed.json", articleID), prettyJSON, 0644)
 	}
 
 	o.logger.WithFields(logrus.Fields{
-		"keywords_count":  len(processed.Keywords),
-		"summary_length":  len(processed.Summary),
-		"insights_length": len(processed.Insights),
-	}).Debug("Content processed successfully")
+		"article_id": articleID,
+		"domain":     result.Domain,
+		"type":       result.Type,
+	}).Debug("Pass 1: Classification completed")
 
-	return processed, nil
+	return result, nil
 }
 
-// buildAnalysisPrompt creates a comprehensive prompt for content analysis
+// extractEntities - Pass 2: Named entity extraction based on domain
+func (o *Ollama) extractEntities(title, content string, classification ClassificationResult, articleID int, debug bool) (EntityResult, error) {
+	prompt := fmt.Sprintf(`This is a %s article about: %s
+
+Title: %s
+
+Content: %s
+
+Extract named entities from this article. Output ONLY valid JSON, no other text.
+
+For %s domain, focus on:
+- Facilities/Instruments (labs, detectors, telescopes, tools)
+- People/Organizations (researchers, institutions, companies)
+- Locations (specific places, regions)
+- Phenomena (specific events, processes, discoveries)
+
+Output JSON format:
+{
+  "facilities": ["entity1", "entity2"],
+  "people": ["person1", "organization1"],
+  "locations": ["location1"],
+  "phenomena": ["phenomenon1", "phenomenon2"]
+}
+
+JSON:`, classification.Domain, classification.Topic, title, content, classification.Domain)
+
+	if debug {
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass2-prompt.txt", articleID), []byte(prompt), 0644)
+	}
+
+	response, err := o.generateCompletion(prompt)
+	if err != nil {
+		return EntityResult{}, err
+	}
+
+	if debug {
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass2-response.txt", articleID), []byte(response), 0644)
+	}
+
+	var result EntityResult
+	cleanJSON := o.extractJSON(response)
+
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		if debug {
+			os.WriteFile(fmt.Sprintf("./debug/article-%d-pass2-ERROR.txt", articleID),
+				[]byte(fmt.Sprintf("Parse error: %s\n\nClean JSON attempted:\n%s", err.Error(), cleanJSON)), 0644)
+		}
+		return EntityResult{}, fmt.Errorf("failed to parse entities: %w", err)
+	}
+
+	if debug {
+		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass2-parsed.json", articleID), prettyJSON, 0644)
+	}
+
+	o.logger.WithFields(logrus.Fields{
+		"article_id": articleID,
+		"facilities": len(result.Facilities),
+		"people":     len(result.People),
+		"locations":  len(result.Locations),
+		"phenomena":  len(result.Phenomena),
+	}).Debug("Pass 2: Entity extraction completed")
+
+	return result, nil
+}
+
+// extractConcepts - Pass 3: Conceptual understanding and related topics
+func (o *Ollama) extractConcepts(title, content string, classification ClassificationResult, entities EntityResult, articleID int, debug bool) (ConceptResult, error) {
+	prompt := fmt.Sprintf(`This is a %s article about: %s
+
+We've identified these entities:
+- Facilities: %v
+- People: %v
+- Locations: %v
+- Phenomena: %v
+
+Title: %s
+
+Content: %s
+
+What conceptual knowledge would help understand this article deeply?
+What related topics would provide context?
+
+Output ONLY valid JSON, no other text.
+
+Output JSON format:
+{
+  "concepts": ["concept1", "concept2", "concept3"],
+  "related_topics": ["topic1", "topic2", "topic3"]
+}
+
+Focus on:
+- Fundamental theories or principles
+- Methods or techniques
+- Related fields of study
+- Prerequisites for understanding
+
+JSON:`, classification.Domain, classification.Topic,
+		entities.Facilities, entities.People, entities.Locations, entities.Phenomena,
+		title, content)
+
+	if debug {
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass3-prompt.txt", articleID), []byte(prompt), 0644)
+	}
+
+	response, err := o.generateCompletion(prompt)
+	if err != nil {
+		return ConceptResult{}, err
+	}
+
+	if debug {
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass3-response.txt", articleID), []byte(response), 0644)
+	}
+
+	var result ConceptResult
+	cleanJSON := o.extractJSON(response)
+
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		if debug {
+			os.WriteFile(fmt.Sprintf("./debug/article-%d-pass3-ERROR.txt", articleID),
+				[]byte(fmt.Sprintf("Parse error: %s\n\nClean JSON attempted:\n%s", err.Error(), cleanJSON)), 0644)
+		}
+		return ConceptResult{}, fmt.Errorf("failed to parse concepts: %w", err)
+	}
+
+	if debug {
+		prettyJSON, _ := json.MarshalIndent(result, "", "  ")
+		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass3-parsed.json", articleID), prettyJSON, 0644)
+	}
+
+	o.logger.WithFields(logrus.Fields{
+		"article_id":     articleID,
+		"concepts":       len(result.Concepts),
+		"related_topics": len(result.RelatedTopics),
+	}).Debug("Pass 3: Concept extraction completed")
+
+	return result, nil
+}
+
+// buildAnalysisPrompt creates a comprehensive prompt for content analysis (legacy)
 func (o *Ollama) buildAnalysisPrompt(title, content string) string {
 	return fmt.Sprintf(`Analyze the following article and provide a structured response in JSON format.
 
@@ -149,18 +398,15 @@ func (o *Ollama) generateCompletion(prompt string) (string, error) {
 	return ollamaResp.Response, nil
 }
 
-// parseStructuredResponse attempts to parse the JSON response from Ollama
+// parseStructuredResponse attempts to parse the JSON response from Ollama (legacy)
 func (o *Ollama) parseStructuredResponse(response string) (*ProcessedContent, error) {
-	// Clean up the response - sometimes LLMs add extra text
 	response = o.extractJSON(response)
 
 	var processed ProcessedContent
 	if err := json.Unmarshal([]byte(response), &processed); err != nil {
-		// Fallback: try to parse manually if JSON parsing fails
 		return o.fallbackParsing(response)
 	}
 
-	// Validate and clean the parsed content
 	if processed.Summary == "" {
 		processed.Summary = "No summary available"
 	}
@@ -176,7 +422,6 @@ func (o *Ollama) parseStructuredResponse(response string) (*ProcessedContent, er
 
 // extractJSON attempts to extract JSON from the response
 func (o *Ollama) extractJSON(response string) string {
-	// Find JSON object in the response
 	start := -1
 	end := -1
 	braceCount := 0
@@ -197,17 +442,47 @@ func (o *Ollama) extractJSON(response string) string {
 	}
 
 	if start != -1 && end != -1 {
-		return response[start:end]
+		extracted := response[start:end]
+
+		// Fix common JSON escaping issues from LLM output
+		extracted = strings.ReplaceAll(extracted, `\_`, `_`)
+		extracted = strings.ReplaceAll(extracted, `\-`, `-`)
+
+		// Remove any backslash before alphanumeric characters (LLM over-escaping)
+		re := regexp.MustCompile(`\\([a-zA-Z0-9])`)
+		extracted = re.ReplaceAllString(extracted, `$1`)
+
+		return extracted
+	}
+
+	// Fallback: If no braces found, check if response looks like JSON content without wrapper
+	trimmed := strings.TrimSpace(response)
+	if strings.HasPrefix(trimmed, `"`) && strings.Contains(trimmed, `":`) {
+		// Looks like JSON fields without braces - wrap it
+		o.logger.Warn("Response missing JSON braces, attempting to wrap")
+		wrapped := "{" + trimmed
+
+		// Check if it ends with }
+		if !strings.HasSuffix(wrapped, "}") {
+			wrapped += "}"
+		}
+
+		// Clean up escaping
+		wrapped = strings.ReplaceAll(wrapped, `\_`, `_`)
+		wrapped = strings.ReplaceAll(wrapped, `\-`, `-`)
+		re := regexp.MustCompile(`\\([a-zA-Z0-9])`)
+		wrapped = re.ReplaceAllString(wrapped, `$1`)
+
+		return wrapped
 	}
 
 	return response
 }
 
-// fallbackParsing provides a fallback when JSON parsing fails
+// fallbackParsing provides a fallback when JSON parsing fails (legacy)
 func (o *Ollama) fallbackParsing(response string) (*ProcessedContent, error) {
 	o.logger.Warn("JSON parsing failed, using fallback parsing")
 
-	// Simple fallback - treat the entire response as insights
 	return &ProcessedContent{
 		Summary:  "Summary not available due to parsing error",
 		Keywords: []string{"parsing", "error", "fallback", "content", "analysis"},

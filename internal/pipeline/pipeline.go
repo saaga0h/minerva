@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/saaga/minerva/internal/database"
@@ -21,6 +22,7 @@ type Pipeline struct {
 	db          *database.DB
 	logger      *logrus.Logger
 	dryRun      bool
+	debugOllama bool
 }
 
 type Config struct {
@@ -34,6 +36,7 @@ type Config struct {
 	Database    *database.DB
 	Logger      *logrus.Logger
 	DryRun      bool
+	DebugOllama bool
 }
 
 func New(cfg Config) *Pipeline {
@@ -57,8 +60,10 @@ func New(cfg Config) *Pipeline {
 		db:          cfg.Database,
 		logger:      cfg.Logger,
 		dryRun:      cfg.DryRun,
+		debugOllama: cfg.DebugOllama,
 	}
 }
+
 func (p *Pipeline) Run(ctx context.Context) error {
 	p.logger.Info("Starting Minerva pipeline")
 	startTime := time.Now()
@@ -244,11 +249,36 @@ func (p *Pipeline) processWithOllama(ctx context.Context, articles []*database.A
 				Insights: "This would contain insights about " + article.Title,
 			}
 		} else {
-			var err error
-			processed, err = p.ollama.ProcessContent(article.Title, article.Content)
+			// Always use multi-pass analysis
+			multiPass, err := p.ollama.ProcessContentMultiPass(article.Title, article.Content, article.ID, p.debugOllama)
 			if err != nil {
-				p.logger.WithError(err).WithField("article_id", article.ID).Warn("Failed to process with Ollama")
+				p.logger.WithError(err).WithField("article_id", article.ID).Warn("Failed to process with Ollama multi-pass")
 				continue
+			}
+
+			// Build keywords from phenomena + concepts + related topics
+			var keywords []string
+			keywords = append(keywords, multiPass.Pass2.Phenomena...)
+			keywords = append(keywords, multiPass.Pass3.Concepts...)
+			keywords = append(keywords, multiPass.Pass3.RelatedTopics...)
+
+			// Deduplicate
+			seen := make(map[string]bool)
+			var uniqueKeywords []string
+			for _, kw := range keywords {
+				lower := strings.ToLower(kw)
+				if !seen[lower] {
+					seen[lower] = true
+					uniqueKeywords = append(uniqueKeywords, kw)
+				}
+			}
+
+			processed = &services.ProcessedContent{
+				Summary:  multiPass.Pass1.Topic,
+				Keywords: uniqueKeywords,
+				Insights: fmt.Sprintf("Domain: %s. Related: %s",
+					multiPass.Pass1.Domain,
+					strings.Join(multiPass.Pass3.RelatedTopics, ", ")),
 			}
 		}
 
@@ -417,7 +447,7 @@ func (p *Pipeline) checkKohaOwnership(ctx context.Context) ([]services.Notificat
 			}).Info("Book already owned in catalog")
 		} else {
 			newBooks = append(newBooks, services.NotificationBook{
-				ArticleID: rec.ArticleID, // Add this
+				ArticleID: rec.ArticleID,
 				Title:     rec.Title,
 				Author:    rec.Author,
 				Relevance: rec.Relevance,
