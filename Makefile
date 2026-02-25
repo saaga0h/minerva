@@ -6,7 +6,6 @@ DOCKER_IMAGE := minerva
 DOCKER_TAG := latest
 
 # Directories
-CMD_DIR := ./cmd/minerva
 BUILD_DIR := ./build
 
 # Go configuration
@@ -14,7 +13,12 @@ GOOS := linux
 GOARCH := amd64
 CGO_ENABLED := 1
 
-.PHONY: help build test clean docker run dev deps fmt lint
+# MQTT broker URL for trigger helper
+MQTT_BROKER ?= tcp://localhost:1883
+
+.PHONY: help build build-primitives test clean docker run dev deps fmt lint \
+        run-source-freshrss run-source-miniflux run-extractor run-analyzer \
+        run-book-search run-koha-check run-notifier trigger mosquitto
 
 # Default target
 help: ## Show this help message
@@ -28,19 +32,20 @@ deps: ## Install Go dependencies
 	go mod download
 	go mod verify
 
-# Build the application
-build: ## Build the application binary
-	@echo "Building $(BINARY_NAME)..."
-	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
-		-ldflags "-X main.version=$(shell git describe --tags --always --dirty)" \
-		-o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+# Build all primitives for production (Linux/amd64)
+build: build-primitives ## Build all primitive binaries for production (Linux/amd64)
 
 # Build for development (with debug info)
-build-dev: ## Build for development with debug symbols
-	@echo "Building $(BINARY_NAME) for development..."
+build-dev: ## Build all primitives for development with debug symbols
+	@echo "Building primitives for development..."
 	@mkdir -p $(BUILD_DIR)
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/$(BINARY_NAME) $(CMD_DIR)
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-freshrss  ./cmd/source-freshrss/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-miniflux  ./cmd/source-miniflux/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/extractor        ./cmd/extractor/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/analyzer         ./cmd/analyzer/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/book-search      ./cmd/book-search/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/koha-check       ./cmd/koha-check/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/notifier         ./cmd/notifier/
 
 # Run tests
 test: ## Run tests
@@ -73,20 +78,25 @@ docker: ## Build Docker image
 docker-dev: ## Build and run with development services
 	docker-compose --profile dev up --build
 
-# Run the application
-run: build ## Build and run the application
-	@echo "Running $(BINARY_NAME)..."
-	$(BUILD_DIR)/$(BINARY_NAME)
+# Run the application — start all primitives (requires Mosquitto running)
+run: build ## Build and show instructions for running primitives
+	@echo "All primitives built. Start each in a separate terminal:"
+	@echo "  $(BUILD_DIR)/source-freshrss  -config .env"
+	@echo "  $(BUILD_DIR)/source-miniflux  -config .env"
+	@echo "  $(BUILD_DIR)/extractor        -config .env"
+	@echo "  $(BUILD_DIR)/analyzer         -config .env"
+	@echo "  $(BUILD_DIR)/book-search      -config .env"
+	@echo "  $(BUILD_DIR)/koha-check       -config .env"
+	@echo "  $(BUILD_DIR)/notifier         -config .env"
+	@echo "Then trigger the pipeline: make trigger"
 
 # Run in development mode
-dev: build-dev ## Build and run in development mode
-	@echo "Running $(BINARY_NAME) in development mode..."
-	$(BUILD_DIR)/$(BINARY_NAME) -config .env.dev
+dev: build-dev ## Build all primitives in development mode
+	@echo "Primitives built. Run each with: -config .env.dev"
 
-# Run with dry-run flag
-dry-run: build-dev ## Build and run in dry-run mode
-	@echo "Running $(BINARY_NAME) in dry-run mode..."
-	$(BUILD_DIR)/$(BINARY_NAME) -config .env.dev -dry-run
+# Run with dry-run flag (kept for compatibility, now just shows help)
+dry-run: build-dev ## Build primitives (dry-run mode removed — use trigger for testing)
+	@echo "Dry-run mode removed. Start primitives individually and use 'make trigger'."
 
 # Nomad deployment
 deploy-nomad: docker ## Deploy to Nomad
@@ -94,10 +104,9 @@ deploy-nomad: docker ## Deploy to Nomad
 	nomad job run deploy/nomad/minerva.nomad
 
 # Database operations
-db-init: ## Initialize the database
+db-init: ## Initialize the database directory
 	@echo "Initializing database..."
 	mkdir -p ./data
-	$(BUILD_DIR)/$(BINARY_NAME) -config .env.dev -dry-run
 
 # Development setup
 setup-dev: deps ## Setup development environment
@@ -132,4 +141,53 @@ reset-db:
 .PHONY: query
 query:
 	@sqlite3 ./data/minerva.db
-	
+
+# ── Primitive builds ──────────────────────────────────────────────────────────
+
+build-primitives: ## Build all primitive binaries (native, for local dev)
+	@echo "Building primitives..."
+	@mkdir -p $(BUILD_DIR)
+	go build -o $(BUILD_DIR)/source-freshrss  ./cmd/source-freshrss/
+	go build -o $(BUILD_DIR)/source-miniflux  ./cmd/source-miniflux/
+	go build -o $(BUILD_DIR)/extractor        ./cmd/extractor/
+	go build -o $(BUILD_DIR)/analyzer         ./cmd/analyzer/
+	go build -o $(BUILD_DIR)/book-search      ./cmd/book-search/
+	go build -o $(BUILD_DIR)/koha-check       ./cmd/koha-check/
+	go build -o $(BUILD_DIR)/notifier         ./cmd/notifier/
+	@echo "Done. Binaries in $(BUILD_DIR)/"
+
+# ── Primitive run targets ─────────────────────────────────────────────────────
+
+run-source-freshrss: build-primitives ## Run FreshRSS source primitive
+	$(BUILD_DIR)/source-freshrss -config .env.dev
+
+run-source-miniflux: build-primitives ## Run Miniflux source primitive
+	$(BUILD_DIR)/source-miniflux -config .env.dev
+
+run-extractor: build-primitives ## Run extractor primitive
+	$(BUILD_DIR)/extractor -config .env.dev
+
+run-analyzer: build-primitives ## Run analyzer primitive
+	$(BUILD_DIR)/analyzer -config .env.dev
+
+run-book-search: build-primitives ## Run book-search primitive
+	$(BUILD_DIR)/book-search -config .env.dev
+
+run-koha-check: build-primitives ## Run koha-check primitive
+	$(BUILD_DIR)/koha-check -config .env.dev
+
+run-notifier: build-primitives ## Run notifier primitive
+	$(BUILD_DIR)/notifier -config .env.dev
+
+# ── Pipeline trigger ──────────────────────────────────────────────────────────
+
+trigger: ## Publish a pipeline trigger to MQTT (requires mosquitto_pub in PATH)
+	@echo "Triggering pipeline via MQTT..."
+	mosquitto_pub -h localhost -p 1883 -t "minerva/pipeline/trigger" -m "{}"
+	@echo "Trigger sent to minerva/pipeline/trigger"
+
+# ── Local Mosquitto ───────────────────────────────────────────────────────────
+
+mosquitto: ## Start Mosquitto broker via docker compose
+	docker compose up mosquitto -d
+	@echo "Mosquitto started on localhost:1883"

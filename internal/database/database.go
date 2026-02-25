@@ -154,6 +154,16 @@ func (db *DB) migrate() error {
 	return nil
 }
 
+// GetArticleIDByURL returns the database ID for an article with the given URL.
+func (db *DB) GetArticleIDByURL(url string) (int, error) {
+	var id int
+	err := db.conn.QueryRow("SELECT id FROM articles WHERE url = ?", url).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get article ID by URL: %w", err)
+	}
+	return id, nil
+}
+
 // ArticleExists checks if an article with the given URL already exists
 func (db *DB) ArticleExists(url string) (bool, error) {
 	var count int

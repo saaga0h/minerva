@@ -1,10 +1,10 @@
 # Minerva - Intelligent Content Curation Pipeline
 
-Minerva transforms RSS feed items into book recommendations by orchestrating multiple REST APIs and AI services. It demonstrates how to build complex workflows in Go by composing simple, focused services rather than building monolithic systems.
+Minerva transforms RSS feed items into book recommendations by orchestrating multiple REST APIs and AI services. It is a distributed system of independent MQTT primitives connected through a Mosquitto broker — not a monolith.
 
 ## What Minerva Does
 
-1. Fetches starred articles from FreshRSS
+1. Fetches starred articles from Miniflux (or FreshRSS)
 2. Extracts and cleans article content
 3. Analyzes content using local LLM (Ollama)
 4. Searches for relevant books (OpenLibrary)
@@ -13,75 +13,87 @@ Minerva transforms RSS feed items into book recommendations by orchestrating mul
 
 **Result**: Wake up to curated book recommendations based on what you read, filtered by what you already own.
 
-## Architecture: Service Composition Pattern
+## Architecture: Distributed MQTT Primitives
+
+Each stage of the pipeline is an independent long-running binary. They communicate exclusively through a Mosquitto broker — no service calls each other directly.
 
 ```
-RSS Feed → Extract → Analyze → Search → Validate → Notify
-   ↓         ↓         ↓         ↓         ↓         ↓
-FreshRSS  Extractor  Ollama  OpenLibrary  Koha    Ntfy
-(Fever)   (goquery) (local)   (REST)    (REST) (webhook)
+[trigger] → source-freshrss ─┐
+            source-miniflux  ─┤→ extractor → analyzer → book-search → koha-check → notifier
+                              └─────────────────────────────────────────────────────↑
+                                                                        (ArticleComplete)
 ```
+
+### Topic Chain
+
+| Topic | Publisher | Subscriber(s) |
+|-------|-----------|---------------|
+| `minerva/pipeline/trigger` | external / `make trigger` | source-freshrss, source-miniflux |
+| `minerva/articles/raw` | source primitives | extractor |
+| `minerva/articles/extracted` | extractor | analyzer |
+| `minerva/articles/analyzed` | analyzer | book-search |
+| `minerva/books/candidates` | book-search | koha-check |
+| `minerva/books/checked` | koha-check | notifier |
+| `minerva/articles/complete` | notifier | source-freshrss, source-miniflux |
 
 ### Core Design Principles
 
-**1. Service Independence**
-Each service is self-contained with no cross-dependencies:
+**1. Primitive Independence**
+Each primitive is a self-contained binary with no cross-dependencies:
 
 ```go
-type Service struct {
-    config config.ServiceConfig
-    client *http.Client
-    logger *logrus.Logger
-}
-
-func NewService(cfg config.ServiceConfig) *Service
-func (s *Service) DoWork(input Data) (Output, error)
-func (s *Service) SetLogger(logger *logrus.Logger)
+// Subscribe to one topic, publish to the next
+mqttClient.Subscribe(mqtt.TopicArticlesRaw, func(payload []byte) {
+    var msg mqtt.RawArticle
+    json.Unmarshal(payload, &msg)
+    result := doWork(msg)
+    mqttClient.Publish(mqtt.TopicArticlesExtracted, result)
+})
 ```
 
-**2. Pipeline Orchestration**
-The pipeline coordinates service calls without services knowing about each other:
-
-```go
-func (p *Pipeline) Run(ctx context.Context) error {
-    items := p.freshRSS.GetStarredItems()        // 1. Source
-    articles := p.extractor.ExtractContent(items) // 2. Extract
-    metadata := p.ollama.ProcessContent(articles) // 3. Analyze
-    books := p.openLibrary.SearchBooks(metadata)  // 4. Search
-    owned := p.koha.CheckOwnership(books)         // 5. Validate
-    p.ntfy.Send(newBooks, ownedBooks)            // 6. Notify
-}
-```
+**2. Source Pluggability**
+Source primitives are interchangeable. Miniflux is the primary source; FreshRSS is also supported. Both subscribe to `minerva/pipeline/trigger` and publish `RawArticle` messages to `minerva/articles/raw`.
 
 **3. Data Persistence**
-SQLite maintains state between runs:
+Each source primitive maintains its own SQLite state DB for dedup and completion tracking. The notifier writes to the book recommendations DB.
 
 ```
-articles → processed → recommendations → checked → notified
+published → pipeline stages → ArticleComplete → marked done in source state DB
 ```
 
 ## Project Structure
 
 ```
 minerva/
-├── cmd/minerva/           # Application entry point
+├── cmd/
+│   ├── source-freshrss/  # FreshRSS source primitive
+│   ├── source-miniflux/  # Miniflux source primitive
+│   ├── extractor/        # HTML content extraction
+│   ├── analyzer/         # Ollama LLM analysis
+│   ├── book-search/      # OpenLibrary search
+│   ├── koha-check/       # Library catalog validation
+│   └── notifier/         # Ntfy push notifications
 ├── internal/
 │   ├── config/           # Environment-based configuration
-│   ├── database/         # SQLite persistence layer
-│   ├── pipeline/         # Service orchestration
-│   └── services/         # Independent service integrations
-│       ├── freshrss.go   # Fever API client
-│       ├── extractor.go  # HTML content extraction
-│       ├── ollama.go     # Local LLM processing
-│       ├── openlibrary.go # Book metadata search
-│       ├── koha.go       # Library catalog integration
-│       ├── ntfy.go       # Push notifications
-│       └── searxng.go    # Web search (optional)
+│   ├── database/         # Book recommendations SQLite DB
+│   ├── mqtt/             # Shared MQTT contract (topics, messages, client)
+│   ├── state/            # Per-source SQLite dedup state
+│   └── services/         # HTTP clients for external APIs
+│       ├── freshrss.go
+│       ├── miniflux.go
+│       ├── extractor.go
+│       ├── ollama.go
+│       ├── openlibrary.go
+│       ├── koha.go
+│       ├── ntfy.go
+│       └── searxng.go
 ├── pkg/logger/           # Structured logging
-├── deploy/nomad/         # Nomad job definitions
-├── docker-compose.yml    # Development containers
-├── Dockerfile           # Multi-stage production build
-└── Makefile            # Build automation
+├── deploy/
+│   ├── nomad/            # Nomad job definitions
+│   └── mosquitto/        # Mosquitto broker config
+├── docker-compose.yml    # Development containers (includes Mosquitto)
+├── Dockerfile            # Multi-stage production build
+└── Makefile              # Build automation
 ```
 
 ## Quick Start
@@ -89,7 +101,9 @@ minerva/
 ### Prerequisites
 
 - Go 1.21+
-- FreshRSS instance with Fever API enabled
+- Mosquitto MQTT broker (via Docker Compose or system install)
+- Miniflux instance with API key (primary source)
+- FreshRSS instance with Fever API enabled (optional second source)
 - Ollama running locally or remote
 - Koha library system (optional)
 - Ntfy server (optional)
@@ -108,13 +122,25 @@ cp .env.example .env.dev
 # Install dependencies
 make deps
 
-# Test without external calls
-make dry-run
+# Start Mosquitto broker
+make mosquitto
 
-# Run pipeline
-LOG_LEVEL=debug make dev
+# Build all primitives (native, for local dev)
+make build-primitives
 
-# Reset DB
+# Run each primitive in a separate terminal
+make run-source-miniflux
+make run-source-freshrss
+make run-extractor
+make run-analyzer
+make run-book-search
+make run-koha-check
+make run-notifier
+
+# Trigger the pipeline
+make trigger
+
+# Reset state DB
 make reset-db
 ```
 
@@ -125,7 +151,6 @@ make reset-db
 # Deploy to cluster
 make deploy-nomad
 
-# Runs nightly at 2 AM
 nomad job status minerva
 ```
 
@@ -139,12 +164,6 @@ docker-compose up
 make docker-dev
 ```
 
-#### Cron
-```bash
-# Add to crontab
-0 2 * * * /path/to/minerva -config /path/to/.env
-```
-
 ## Configuration
 
 Create `.env.dev` or `.env`, see .env.example for details
@@ -154,11 +173,16 @@ Create `.env.dev` or `.env`, see .env.example for details
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `LOG_LEVEL` | debug/info/warn/error | info |
-| `DATABASE_PATH` | SQLite file location | ./data/minerva.db |
+| `MQTT_BROKER_URL` | Mosquitto broker address | tcp://localhost:1883 |
+| `MQTT_CLIENT_ID` | Unique client ID per primitive | primitive-specific |
+| `STATE_DB_PATH` | Per-source SQLite state file | ./data/<source>-state.db |
+| `DATABASE_PATH` | Book recommendations DB (notifier) | ./data/minerva.db |
+| `MINIFLUX_BASE_URL` | Miniflux instance URL | - |
+| `MINIFLUX_API_KEY` | Miniflux API key | - |
 | `FRESHRSS_BASE_URL` | Fever API endpoint | - |
 | `FRESHRSS_API_KEY` | Fever API key | - |
 | `OLLAMA_BASE_URL` | Ollama endpoint | http://localhost:11434 |
-| `OLLAMA_MODEL` | Model name | mixtral:8x7b |
+| `OLLAMA_MODEL` | Model name | llama2 |
 | `KOHA_BASE_URL` | Library API endpoint | - |
 | `NTFY_TOPIC` | Notification topic | - |
 
@@ -166,72 +190,63 @@ Create `.env.dev` or `.env`, see .env.example for details
 
 **DEBUG_OLLAMA**: When enabled, writes detailed multi-pass analysis files to `./debug/` directory:
 - `article-{id}-pass1-*.txt` - Domain classification
-- `article-{id}-pass2-*.txt` - Entity extraction  
+- `article-{id}-pass2-*.txt` - Entity extraction
 - `article-{id}-pass3-*.txt` - Concept extraction
 - `article-{id}-complete.json` - Combined analysis
 ```bash
-DEBUG_OLLAMA=true make dev
+DEBUG_OLLAMA=true make run-analyzer
+```
 
 ## Development
 
 ### Building
 ```bash
-make build        # Production binary
-make build-dev    # With debug symbols
-make docker       # Docker image
+make build-primitives  # Native binaries for local dev
+make build             # Production binaries (Linux/amd64)
+make build-dev         # With debug symbols
+make docker            # Docker image
 ```
 
 ### Testing
 ```bash
-make test         # Run tests
-make test-coverage # With coverage
-make fmt lint     # Code quality
-make ci           # Full CI checks
+make test              # Run tests
+make test-coverage     # With coverage
+make fmt lint          # Code quality
+make ci                # Full CI checks
 ```
 
-### Adding a New Service
+### Adding a New Source Primitive
 
-1. **Create service** in `internal/services/`:
+1. **Create service** in `internal/services/<source>.go` — HTTP client, fetch starred/unread items
+2. **Create primitive** at `cmd/source-<name>/main.go`:
 
 ```go
-package services
-
-type NewService struct {
-    config config.NewServiceConfig
-    client *http.Client
-    logger *logrus.Logger
-}
-
-func NewNewService(cfg config.NewServiceConfig) *NewService {
-    return &NewService{
-        config: cfg,
-        client: &http.Client{Timeout: 30 * time.Second},
-        logger: logrus.New(),
-    }
-}
-
-func (s *NewService) DoWork(input string) (string, error) {
-    // HTTP request
-    // Parse response
-    // Return data
-}
-
-func (s *NewService) SetLogger(logger *logrus.Logger) {
-    s.logger = logger
-}
+// Subscribe to trigger and completion topics
+mqttClient.Subscribe(mqtt.TopicPipelineTrigger, func(_ []byte) {
+    fetchAndPublish(log, svc, stateDB, mqttClient)
+})
+mqttClient.Subscribe(mqtt.TopicArticlesComplete, func(payload []byte) {
+    var msg mqtt.ArticleComplete
+    json.Unmarshal(payload, &msg)
+    stateDB.MarkCompleteByArticleID(msg.ArticleID)
+})
 ```
 
-2. **Add config** to `internal/config/config.go`
-3. **Wire into pipeline** in `internal/pipeline/pipeline.go`
-4. **Initialize** in `cmd/minerva/main.go`
+3. **Use `internal/state/`** for SQLite dedup
+4. **Add build and run targets** to Makefile
 
-### Service Design Rules
+### Message Types
 
-- **Single Responsibility**: One service, one task
-- **No Cross-Dependencies**: Services don't call other services
-- **Stateless**: No state between calls
-- **Testable**: Easy to mock/stub
-- **Composable**: Pipeline handles orchestration
+All defined in `internal/mqtt/messages.go`:
+
+- `RawArticle` — URL + title only (extractor fetches content from URL)
+- `ExtractedArticle` — adds clean text Content field
+- `AnalyzedArticle` — summary, keywords, concepts, insights; no Content
+- `BookCandidates` / `CheckedBooks` / `ArticleComplete`
+
+Every message type embeds `Envelope`: MessageID (UUID), ArticleID, Source, Timestamp.
+
+**Article ID** is the first 16 hex chars of the SHA256 of the URL — stable across sources and pipeline stages.
 
 ## Monitoring
 
@@ -243,9 +258,9 @@ JSON logs for easy aggregation:
 {
   "level": "info",
   "time": "2025-01-01T02:00:00Z",
-  "msg": "Pipeline completed",
-  "articles_processed": 15,
-  "duration": "2m30s"
+  "msg": "Published article to bus",
+  "article_id": "a3f9c12b44e1d7f0",
+  "source": "miniflux"
 }
 ```
 
@@ -258,14 +273,14 @@ Nomad job configured for log collection:
 
 ### Key Metrics
 
-- Articles processed per run
-- Processing duration
+- Articles published per trigger
+- Processing duration per stage
 - Success/failure rates
-- Database growth
+- Pending (incomplete) articles per source
 
 ## Database Schema
 
-SQLite tables:
+Book recommendations DB (written by notifier):
 
 ```sql
 articles
@@ -281,9 +296,17 @@ book_recommendations
   - relevance, created_at
 ```
 
+Per-source state DB (`internal/state/`):
+
+```sql
+article_state
+  - url, article_id, title
+  - published_at, completed_at
+```
+
 ## Use Cases Beyond Books
 
-This pattern works for any REST API composition:
+This pattern works for any event-driven pipeline over MQTT:
 
 - **Content Curation**: Source → Analyze → Categorize → Store
 - **Data Enrichment**: Input → Extract → Enhance → Validate
@@ -291,29 +314,39 @@ This pattern works for any REST API composition:
 - **Document Processing**: Fetch → OCR → Classify → Store
 - **Social Analysis**: Collect → Sentiment → Summarize → Report
 
-The key: Identify discrete steps, build focused services, orchestrate through pipeline.
+The key: Identify discrete stages, build independent primitives, connect through a message broker.
 
 ## Why This Architecture?
 
 ### Advantages
 
-✅ **Modularity**: Swap any service independently  
-✅ **Testability**: Mock services for unit tests  
-✅ **Maintainability**: ~200 lines per service  
-✅ **Extensibility**: Add services without touching existing code  
-✅ **Debuggability**: Clear boundaries isolate issues  
-✅ **Reusability**: Extract services to separate packages  
+- **Independent deployment**: restart or replace any primitive without touching others
+- **Pluggable sources**: add new RSS readers without modifying the pipeline
+- **Testability**: mock MQTT messages for unit tests
+- **Debuggability**: subscribe to any topic to inspect in-flight messages
+- **Resilience**: at-least-once delivery (QoS 1); pending articles re-published on restart
 
 ### Trade-offs
 
-❌ **Latency**: Sequential processing takes time  
-❌ **Complexity**: More moving parts  
-❌ **Error Handling**: Careful propagation needed  
-❌ **State**: Database required for progress  
+- **Latency**: multi-hop message passing adds overhead
+- **Operational complexity**: 7 processes instead of one
+- **Local dev**: requires a running Mosquitto broker
 
-For Minerva, latency doesn't matter (runs overnight), but modularity and maintainability are essential.
+The previous monolith is tagged `pre-mqtt-refactor` in git.
 
 ## Troubleshooting
+
+### MQTT / Broker Issues
+```bash
+# Start broker
+make mosquitto
+
+# Check broker is reachable
+mosquitto_pub -h localhost -p 1883 -t test -m hello
+
+# Subscribe to all Minerva topics for debugging
+mosquitto_sub -h localhost -p 1883 -t 'minerva/#' -v
+```
 
 ### Database Issues
 ```bash
@@ -321,6 +354,10 @@ mkdir -p ./data
 chmod 755 ./data
 sqlite3 ./data/minerva.db ".tables"
 ```
+
+### Miniflux Authentication
+- Verify API key in `.env`
+- Confirm starred entries exist in Miniflux
 
 ### FreshRSS Authentication
 - Verify Fever API enabled
@@ -336,12 +373,12 @@ curl http://localhost:11434/api/version
 ollama list
 
 # Test model
-ollama run mixtral:8x7b "test"
+ollama run llama2 "test"
 ```
 
 ### Debug Logging
 ```bash
-LOG_LEVEL=debug make dev
+LOG_LEVEL=debug make run-analyzer
 ```
 
 ## Future Enhancements
@@ -351,6 +388,7 @@ LOG_LEVEL=debug make dev
 - Feedback loop for recommendation quality
 - Web UI for browsing recommendations
 - Parallel article processing
+- Nomad per-primitive job definitions
 - Additional content sources (Pocket, Instapaper)
 - Advanced ranking algorithms
 
