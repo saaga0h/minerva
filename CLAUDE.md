@@ -1,63 +1,15 @@
 # Minerva
 
-Transforms RSS starred articles into book recommendations via a pipeline of independent MQTT primitives. Sources fetch articles, the pipeline extracts, analyzes with Ollama, searches OpenLibrary, checks Koha ownership, and notifies via Ntfy.
+Transforms RSS starred articles into book recommendations via a pipeline of 7 independent MQTT primitives: source-freshrss, source-miniflux, extractor, analyzer, book-search, koha-check, notifier. Each is a long-running binary communicating through Mosquitto.
 
-## Architecture
-
-Minerva is a distributed system of 7 long-running MQTT primitives connected through a Mosquitto broker. There is no monolith — each primitive is an independent binary that subscribes to one topic and publishes to the next.
-
-**Message flow:**
-
-```
-[trigger] → source-freshrss ─┐
-            source-miniflux  ─┤→ extractor → analyzer → book-search → koha-check → notifier
-                              └─────────────────────────────────────────────────────↑
-                                                                        (ArticleComplete)
-```
-
-**Topic chain:**
-
-| Topic | Publisher | Subscriber(s) |
-|---|---|---|
-| `minerva/pipeline/trigger` | external / `make trigger` | source-freshrss, source-miniflux |
-| `minerva/articles/raw` | source primitives | extractor |
-| `minerva/articles/extracted` | extractor | analyzer |
-| `minerva/articles/analyzed` | analyzer | book-search |
-| `minerva/books/candidates` | book-search | koha-check |
-| `minerva/books/checked` | koha-check | notifier |
-| `minerva/articles/complete` | notifier | source-freshrss, source-miniflux |
-
-**Key design decisions:**
-
-- Content is dropped after `minerva/articles/analyzed` — it is large and not needed downstream
-- Source primitives subscribe to `minerva/articles/complete` to mark articles done in their own SQLite state DB (dedup and completion tracking)
-- Only the notifier writes to the book recommendations DB (`internal/database/`)
-- All MQTT messages are QoS 1 (at-least-once), non-retained
-
-## Current State
-
-Implemented and working:
-- All 7 primitives in `cmd/`: source-freshrss, source-miniflux, extractor, analyzer, book-search, koha-check, notifier
-- Shared MQTT contract in `internal/mqtt/`: topics.go, messages.go, client.go
-- Per-source SQLite state in `internal/state/` for dedup and completion tracking
-- Miniflux HTTP client in `internal/services/miniflux.go` (no external library)
-- Mosquitto in docker-compose.yml with config at `deploy/mosquitto/mosquitto.conf`
-- Makefile build and run targets for all primitives
-
-The monolith (`cmd/minerva/` and `internal/pipeline/`) has been deleted. Git tag `pre-mqtt-refactor` marks the last monolith state.
-
-Nomad per-primitive deployment: planned, not yet done.
-
-## Development
+## Build & Test
 
 ```bash
-# Start Mosquitto broker
-make mosquitto
+make mosquitto          # start Mosquitto broker (docker compose)
+make build-primitives   # native build for local dev
+make build              # Linux/amd64 production build
 
-# Build all primitives (native, for local dev)
-make build-primitives
-
-# Run each primitive in a separate terminal
+# Run each in a separate terminal — all expect .env.dev
 make run-source-freshrss
 make run-source-miniflux
 make run-extractor
@@ -66,50 +18,48 @@ make run-book-search
 make run-koha-check
 make run-notifier
 
-# Trigger the pipeline
-make trigger          # publishes {} to minerva/pipeline/trigger
-
-# Tests, formatting, lint
-make test
-make fmt
-make lint
-
-# Production build (Linux/amd64)
-make build
-
-# Inspect book recommendations DB
-make query
+make trigger            # fire pipeline (requires mosquitto_pub in PATH)
+make query              # inspect recommendations DB
+make fmt && make lint
 ```
 
-All run targets expect a `.env.dev` config file.
+No tests currently exist.
+
+CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency).
+
+## Constraints
+
+**Startup order is critical.** paho uses `CleanSession=true` — no persistent sessions. Every primitive must be connected to Mosquitto *before* the trigger fires. Messages published to a topic with no active subscriber are lost permanently.
+
+**Mosquitto must be running** before any primitive starts. `make mosquitto` uses docker compose.
+
+**Ollama must be reachable** at `OLLAMA_BASE_URL` (default `http://localhost:11434`) before the analyzer starts.
 
 ## Conventions
 
-**Adding a new source primitive:**
-1. Create `internal/services/<source>.go` — HTTP client, fetch starred/unread items
-2. Create `cmd/source-<name>/main.go` — subscribe to `minerva/pipeline/trigger`, publish `mqtt.RawArticle` to `minerva/articles/raw`
-3. Use `internal/state/` for SQLite dedup; subscribe to `minerva/articles/complete` to mark done
-4. Add build and run targets to Makefile
+**MQTT handlers must dispatch work in a goroutine.** paho's default ordered delivery (`OrderMatters=true`) blocks all subsequent messages while a handler runs. Calling `Publish` (which calls `token.Wait()`) inside a handler without a goroutine deadlocks the router after the first message. Pattern used in every primitive:
 
-**Message types** (all in `internal/mqtt/messages.go`):
-- `RawArticle` — URL + title only, no content (extractor fetches content from URL)
-- `ExtractedArticle` — adds clean text Content field
-- `AnalyzedArticle` — summary, keywords, concepts, insights; no Content
-- `BookCandidates` / `CheckedBooks` / `ArticleComplete`
+```go
+mqttClient.Subscribe(topic, func(payload []byte) {
+    data := make([]byte, len(payload))
+    copy(data, payload)
+    go func() {
+        // all blocking work here, including Publish calls
+    }()
+})
+```
 
-**MQTT client** (`internal/mqtt/client.go`):
-- QoS 1, auto-reconnect, 5s retry interval, 10s connect timeout
-- `Publish(topic, any)` — marshals to JSON
-- `Subscribe(topic, func([]byte))` — delivers raw JSON bytes to handler
+**Ollama calls are serialized** with `sync.Mutex` in the analyzer — Ollama handles one inference at a time. Timeout is 300s per pass × 3 passes = up to 15min per article.
 
-**Article ID** is SHA256 of URL — stable across sources and pipeline stages.
+**SQLite writes in the notifier are serialized** with `sync.Mutex` — concurrent goroutines writing to the recommendations DB need protection.
 
-**Envelope** struct is embedded in every message type: MessageID (UUID), ArticleID, Source, Timestamp.
+**ArticleID** = first 16 hex chars of SHA256(URL). Stable across all pipeline stages and sources.
 
-**Dependencies:** `github.com/eclipse/paho.mqtt.golang` for MQTT, `go-readability` for extraction, `go-sqlite3` (CGo) for state and DB, `logrus` for structured logging.
+**Adding a source primitive:** service in `internal/services/`, binary in `cmd/source-<name>/`. Subscribe to `minerva/pipeline/trigger` and `minerva/articles/complete`. Use `internal/state/` for dedup. Publish `mqtt.RawArticle` to `minerva/articles/raw`. Add Makefile targets.
 
-CGo is required (`CGO_ENABLED=1`) because of go-sqlite3.
+## Gotchas
 
-## Recent Changes
-
-- 2026-02-25: MQTT primitive refactor — deleted monolith, split into 7 independent primitives communicating via Mosquitto; added internal/mqtt/ contract, internal/state/ per-source dedup, Miniflux source, Mosquitto in docker-compose, updated Makefile with primitive build/run/trigger targets
+- `DEBUG_OLLAMA=true` writes per-pass prompts and responses to `./debug/` — useful for diagnosing bad LLM output
+- Miniflux source queries with `status=read&status=unread` — without this, starred+read articles are not returned by the API
+- `make trigger` requires `mosquitto_pub` installed on the host (not in the container)
+- Git tag `pre-mqtt-refactor` marks the last monolith state (cmd/minerva/ + internal/pipeline/ — now deleted)
