@@ -1,6 +1,6 @@
 # Minerva
 
-Transforms RSS starred articles into book recommendations via a pipeline of 7 independent MQTT primitives: source-freshrss, source-miniflux, extractor, analyzer, book-search, koha-check, notifier. Each is a long-running binary communicating through Mosquitto.
+Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, book-search, koha-check, notifier. Each is a long-running binary communicating through Mosquitto.
 
 ## Build & Test
 
@@ -12,6 +12,7 @@ make build              # Linux/amd64 production build
 # Run each in a separate terminal — all expect .env.dev
 make run-source-freshrss
 make run-source-miniflux
+make run-source-linkwarden
 make run-extractor
 make run-analyzer
 make run-book-search
@@ -61,5 +62,6 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 
 - `DEBUG_OLLAMA=true` writes per-pass prompts and responses to `./debug/` — useful for diagnosing bad LLM output
 - Miniflux source queries with `status=read&status=unread` — without this, starred+read articles are not returned by the API
+- Linkwarden pagination is cursor-based: cursor starts at 0, each page's next cursor is the `id` of the last item returned. Stops when response array is empty. The title field in the JSON is `name`, not `title`.
 - `make trigger` requires `mosquitto_pub` installed on the host (not in the container)
 - Git tag `pre-mqtt-refactor` marks the last monolith state (cmd/minerva/ + internal/pipeline/ — now deleted)

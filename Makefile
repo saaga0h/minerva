@@ -17,7 +17,7 @@ CGO_ENABLED := 1
 MQTT_BROKER ?= tcp://localhost:1883
 
 .PHONY: help build build-primitives test clean docker run dev deps fmt lint \
-        run-source-freshrss run-source-miniflux run-extractor run-analyzer \
+        run-source-freshrss run-source-miniflux run-source-linkwarden run-extractor run-analyzer \
         run-book-search run-koha-check run-notifier trigger mosquitto
 
 # Default target
@@ -39,9 +39,10 @@ build: build-primitives ## Build all primitive binaries for production (Linux/am
 build-dev: ## Build all primitives for development with debug symbols
 	@echo "Building primitives for development..."
 	@mkdir -p $(BUILD_DIR)
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-freshrss  ./cmd/source-freshrss/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-miniflux  ./cmd/source-miniflux/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/extractor        ./cmd/extractor/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-freshrss    ./cmd/source-freshrss/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-miniflux    ./cmd/source-miniflux/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-linkwarden  ./cmd/source-linkwarden/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/extractor          ./cmd/extractor/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/analyzer         ./cmd/analyzer/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/book-search      ./cmd/book-search/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/koha-check       ./cmd/koha-check/
@@ -81,9 +82,10 @@ docker-dev: ## Build and run with development services
 # Run the application — start all primitives (requires Mosquitto running)
 run: build ## Build and show instructions for running primitives
 	@echo "All primitives built. Start each in a separate terminal:"
-	@echo "  $(BUILD_DIR)/source-freshrss  -config .env"
-	@echo "  $(BUILD_DIR)/source-miniflux  -config .env"
-	@echo "  $(BUILD_DIR)/extractor        -config .env"
+	@echo "  $(BUILD_DIR)/source-freshrss    -config .env"
+	@echo "  $(BUILD_DIR)/source-miniflux    -config .env"
+	@echo "  $(BUILD_DIR)/source-linkwarden  -config .env"
+	@echo "  $(BUILD_DIR)/extractor          -config .env"
 	@echo "  $(BUILD_DIR)/analyzer         -config .env"
 	@echo "  $(BUILD_DIR)/book-search      -config .env"
 	@echo "  $(BUILD_DIR)/koha-check       -config .env"
@@ -147,13 +149,14 @@ query:
 build-primitives: ## Build all primitive binaries (native, for local dev)
 	@echo "Building primitives..."
 	@mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/source-freshrss  ./cmd/source-freshrss/
-	go build -o $(BUILD_DIR)/source-miniflux  ./cmd/source-miniflux/
-	go build -o $(BUILD_DIR)/extractor        ./cmd/extractor/
-	go build -o $(BUILD_DIR)/analyzer         ./cmd/analyzer/
-	go build -o $(BUILD_DIR)/book-search      ./cmd/book-search/
-	go build -o $(BUILD_DIR)/koha-check       ./cmd/koha-check/
-	go build -o $(BUILD_DIR)/notifier         ./cmd/notifier/
+	go build -o $(BUILD_DIR)/source-freshrss    ./cmd/source-freshrss/
+	go build -o $(BUILD_DIR)/source-miniflux    ./cmd/source-miniflux/
+	go build -o $(BUILD_DIR)/source-linkwarden  ./cmd/source-linkwarden/
+	go build -o $(BUILD_DIR)/extractor          ./cmd/extractor/
+	go build -o $(BUILD_DIR)/analyzer           ./cmd/analyzer/
+	go build -o $(BUILD_DIR)/book-search        ./cmd/book-search/
+	go build -o $(BUILD_DIR)/koha-check         ./cmd/koha-check/
+	go build -o $(BUILD_DIR)/notifier           ./cmd/notifier/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
 # ── Primitive run targets ─────────────────────────────────────────────────────
@@ -163,6 +166,9 @@ run-source-freshrss: build-primitives ## Run FreshRSS source primitive
 
 run-source-miniflux: build-primitives ## Run Miniflux source primitive
 	$(BUILD_DIR)/source-miniflux -config .env.dev
+
+run-source-linkwarden: build-primitives ## Run Linkwarden source primitive
+	$(BUILD_DIR)/source-linkwarden -config .env.dev
 
 run-extractor: build-primitives ## Run extractor primitive
 	$(BUILD_DIR)/extractor -config .env.dev

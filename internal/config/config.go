@@ -12,6 +12,7 @@ type Config struct {
 	Log         LogConfig         `json:"log"`
 	Database    DatabaseConfig    `json:"database"`
 	FreshRSS    FreshRSSConfig    `json:"fresh_rss"`
+	Linkwarden  LinkwardenConfig  `json:"linkwarden"`
 	Ollama      OllamaConfig      `json:"ollama"`
 	SearXNG     SearXNGConfig     `json:"searxng"`
 	OpenLibrary OpenLibraryConfig `json:"openlibrary"`
@@ -40,6 +41,12 @@ type FreshRSSConfig struct {
 	BaseURL string `json:"base_url" env:"FRESHRSS_BASE_URL"`
 	APIKey  string `json:"api_key" env:"FRESHRSS_API_KEY"`
 	Timeout int    `json:"timeout" env:"FRESHRSS_TIMEOUT" default:"30"`
+}
+
+type LinkwardenConfig struct {
+	BaseURL string `json:"base_url" env:"LINKWARDEN_BASE_URL"`
+	APIKey  string `json:"api_key"  env:"LINKWARDEN_API_KEY"`
+	Timeout int    `json:"timeout"  env:"LINKWARDEN_TIMEOUT" default:"30"`
 }
 
 type OllamaConfig struct {
@@ -110,6 +117,11 @@ func Load(configPath string) (*Config, error) {
 			BaseURL: getEnv("FRESHRSS_BASE_URL", ""),
 			APIKey:  getEnv("FRESHRSS_API_KEY", ""),
 			Timeout: getEnvInt("FRESHRSS_TIMEOUT", 30),
+		},
+		Linkwarden: LinkwardenConfig{
+			BaseURL: getEnv("LINKWARDEN_BASE_URL", ""),
+			APIKey:  getEnv("LINKWARDEN_API_KEY", ""),
+			Timeout: getEnvInt("LINKWARDEN_TIMEOUT", 30),
 		},
 		Ollama: OllamaConfig{
 			BaseURL:     getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
