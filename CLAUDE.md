@@ -1,11 +1,12 @@
 # Minerva
 
-Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, book-search, koha-check, notifier. Each is a long-running binary communicating through Mosquitto.
+Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, book-search, koha-check, notifier, store. Each is a long-running binary communicating through Mosquitto.
 
 ## Build & Test
 
 ```bash
 make mosquitto          # start Mosquitto broker (docker compose)
+make pg                 # start PostgreSQL broker (docker compose) — required for store primitive
 make build-primitives   # native build for local dev
 make build              # Linux/amd64 production build
 
@@ -18,6 +19,7 @@ make run-analyzer
 make run-book-search
 make run-koha-check
 make run-notifier
+make run-store          # optional — populates knowledge base (requires PostgreSQL)
 
 make trigger            # fire pipeline (requires mosquitto_pub in PATH)
 make query              # inspect recommendations DB
@@ -35,6 +37,14 @@ CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency).
 **Mosquitto must be running** before any primitive starts. `make mosquitto` uses docker compose.
 
 **Ollama must be reachable** at `OLLAMA_BASE_URL` (default `http://localhost:11434`) before the analyzer starts.
+
+**`cmd/store` is a pure observer** — it does not publish to any pipeline topic. The pipeline runs normally without it. Start it before the trigger if knowledge base population is wanted.
+
+**PostgreSQL must be running** before `cmd/store` starts. `make pg` uses docker compose. `pgxpool` (pgx/v5) is concurrency-safe — no `sync.Mutex` needed around store calls (unlike the SQLite notifier).
+
+**MQTT topic names changed**: `minerva/books/candidates` → `minerva/works/candidates`, `minerva/books/checked` → `minerva/works/checked`. All primitives must use the new topic strings simultaneously — mixed old/new strings drop messages silently.
+
+**`canonical_id` in the `works` table** is the cross-source dedup key. Priority: `isbn13:{x}` > `doi:{x}` > `arxiv:{x}` > `ref:{reference_id}`. Same book from two sources upserts into one row; both reference IDs are appended to the `reference_ids JSONB` array.
 
 ## Conventions
 
@@ -57,6 +67,8 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 **ArticleID** = first 16 hex chars of SHA256(URL). Stable across all pipeline stages and sources.
 
 **Adding a source primitive:** service in `internal/services/`, binary in `cmd/source-<name>/`. Subscribe to `minerva/pipeline/trigger` and `minerva/articles/complete`. Use `internal/state/` for dedup. Publish `mqtt.RawArticle` to `minerva/articles/raw`. Add Makefile targets.
+
+**Adding a search primitive** (e.g. arXiv): publish `mqtt.WorkCandidates` to `minerva/works/candidates`. Set `WorkType` to `"book"` or `"paper"`. Set `ReferenceID` to `"source-name:source-item-id"` (e.g. `"arxiv:2301.07041"`). Populate `ISBN13`/`DOI`/`ArXivID` where available — the store uses these for cross-source dedup. Multiple search primitives publish concurrently; koha-check filters by `work_type == "book"` before Koha lookup.
 
 ## Gotchas
 

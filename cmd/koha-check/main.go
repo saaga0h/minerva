@@ -54,54 +54,66 @@ func main() {
 	koha := services.NewKoha(cfg.Koha)
 	koha.SetLogger(log)
 
-	// Subscribe to book candidates — check each against Koha catalog
-	if err := mqttClient.Subscribe(mqttclient.TopicBooksCandidates, func(payload []byte) {
+	// Subscribe to work candidates — check books against Koha, pass through non-books
+	if err := mqttClient.Subscribe(mqttclient.TopicWorksCandidates, func(payload []byte) {
 		data := make([]byte, len(payload))
 		copy(data, payload)
 		go func() {
-			var msg mqttclient.BookCandidates
+			var msg mqttclient.WorkCandidates
 			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal BookCandidates")
+				log.WithError(err).Warn("Failed to unmarshal WorkCandidates")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id":     msg.ArticleID,
-				"books_to_check": len(msg.Books),
-			}).Debug("Checking books against Koha catalog")
+				"works_to_check": len(msg.Works),
+			}).Debug("Checking works against Koha catalog")
 
-			var newBooks []mqttclient.BookCandidate
-			var ownedBooks []mqttclient.OwnedBook
+			var newWorks []mqttclient.WorkCandidate
+			var ownedWorks []mqttclient.OwnedWork
 
-			for _, book := range msg.Books {
-				isbn := book.ISBN13
-				if isbn == "" {
-					isbn = book.ISBN
+			for _, work := range msg.Works {
+				// Only books are checked against Koha; papers pass through unchecked
+				if work.WorkType != "book" {
+					newWorks = append(newWorks, work)
+					continue
 				}
 
-				owned, kohaRecord, err := koha.CheckOwnership(isbn, book.Title, book.Author)
+				isbn := work.ISBN13
+				if isbn == "" {
+					isbn = work.ISBN
+				}
+
+				// Koha CheckOwnership takes a single author string — use first author if available
+				author := ""
+				if len(work.Authors) > 0 {
+					author = work.Authors[0]
+				}
+
+				owned, kohaRecord, err := koha.CheckOwnership(isbn, work.Title, author)
 				if err != nil {
-					log.WithError(err).WithField("title", book.Title).Warn("Koha check failed — treating as new book")
-					newBooks = append(newBooks, book)
+					log.WithError(err).WithField("title", work.Title).Warn("Koha check failed — treating as new work")
+					newWorks = append(newWorks, work)
 					continue
 				}
 
 				if owned && kohaRecord != nil {
-					ownedBooks = append(ownedBooks, mqttclient.OwnedBook{
+					ownedWorks = append(ownedWorks, mqttclient.OwnedWork{
 						Title:  kohaRecord.Title,
 						Author: kohaRecord.Author,
 						KohaID: fmt.Sprintf("%d", kohaRecord.BiblioID),
 					})
 					log.WithFields(logrus.Fields{
-						"title":   book.Title,
+						"title":   work.Title,
 						"koha_id": kohaRecord.BiblioID,
 					}).Info("Book found in Koha catalog")
 				} else {
-					newBooks = append(newBooks, book)
+					newWorks = append(newWorks, work)
 				}
 			}
 
-			out := mqttclient.CheckedBooks{
+			out := mqttclient.CheckedWorks{
 				Envelope: mqttclient.Envelope{
 					MessageID: generateID(),
 					ArticleID: msg.ArticleID,
@@ -110,29 +122,29 @@ func main() {
 				},
 				ArticleTitle: msg.ArticleTitle,
 				ArticleURL:   msg.ArticleURL,
-				NewBooks:     newBooks,
-				OwnedBooks:   ownedBooks,
+				NewWorks:     newWorks,
+				OwnedWorks:   ownedWorks,
 			}
 
-			if err := mqttClient.Publish(mqttclient.TopicBooksChecked, out); err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish CheckedBooks")
+			if err := mqttClient.Publish(mqttclient.TopicWorksChecked, out); err != nil {
+				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish CheckedWorks")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id": msg.ArticleID,
-				"new_books":  len(newBooks),
-				"owned":      len(ownedBooks),
-			}).Debug("Published checked books")
+				"new_works":  len(newWorks),
+				"owned":      len(ownedWorks),
+			}).Debug("Published checked works")
 		}()
 	}); err != nil {
-		log.WithError(err).Fatal("Failed to subscribe to books/candidates")
+		log.WithError(err).Fatal("Failed to subscribe to works/candidates")
 	}
 
 	log.WithFields(logrus.Fields{
 		"broker":    brokerURL,
 		"client_id": clientID,
-	}).Info("Koha-check primitive ready — listening for book candidates")
+	}).Info("Koha-check primitive ready — listening for work candidates")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

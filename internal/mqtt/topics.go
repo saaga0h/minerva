@@ -11,14 +11,16 @@ const (
 	// Content field is dropped at this stage — it's large and no longer needed downstream.
 	TopicArticlesAnalyzed = "minerva/articles/analyzed"
 
-	// TopicBooksCandidates is where the OpenLibrary primitive publishes book candidates.
-	TopicBooksCandidates = "minerva/books/candidates"
+	// TopicWorksCandidates is where any search primitive publishes discovered books or papers.
+	// Multiple search primitives (openlibrary, arxiv, etc.) all publish here concurrently.
+	TopicWorksCandidates = "minerva/works/candidates"
 
-	// TopicBooksChecked is where the Koha primitive publishes ownership-checked books.
-	TopicBooksChecked = "minerva/books/checked"
+	// TopicWorksChecked is where the Koha primitive publishes ownership-checked works.
+	// Books are checked against Koha; non-book works pass through unchecked.
+	TopicWorksChecked = "minerva/works/checked"
 
 	// TopicArticlesComplete is where the notifier publishes after successful notification.
-	// Source primitives subscribe to this for completion tracking.
+	// Source primitives subscribe for completion tracking.
 	TopicArticlesComplete = "minerva/articles/complete"
 
 	// TopicPipelineTrigger is the external trigger topic.

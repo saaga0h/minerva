@@ -81,23 +81,25 @@ func main() {
 				return
 			}
 
-			// Convert services.BookRecommendation to mqttclient.BookCandidate
-			candidates := make([]mqttclient.BookCandidate, 0, len(recommendations))
+			// Convert services.BookRecommendation to mqttclient.WorkCandidate
+			candidates := make([]mqttclient.WorkCandidate, 0, len(recommendations))
 			for _, rec := range recommendations {
-				candidates = append(candidates, mqttclient.BookCandidate{
-					Title:          rec.Title,
-					Author:         rec.Author,
-					ISBN:           rec.ISBN,
-					ISBN13:         rec.ISBN13,
-					PublishYear:    rec.PublishYear,
-					Publisher:      rec.Publisher,
-					CoverURL:       rec.CoverURL,
-					OpenLibraryKey: rec.OpenLibraryKey,
-					Relevance:      rec.Relevance,
+				candidates = append(candidates, mqttclient.WorkCandidate{
+					ReferenceID:  "openlibrary:" + rec.OpenLibraryKey,
+					SearchSource: "openlibrary",
+					WorkType:     "book",
+					Title:        rec.Title,
+					Authors:      []string{rec.Author},
+					ISBN:         rec.ISBN,
+					ISBN13:       rec.ISBN13,
+					PublishYear:  rec.PublishYear,
+					Publisher:    rec.Publisher,
+					CoverURL:     rec.CoverURL,
+					Relevance:    rec.Relevance,
 				})
 			}
 
-			out := mqttclient.BookCandidates{
+			out := mqttclient.WorkCandidates{
 				Envelope: mqttclient.Envelope{
 					MessageID: generateID(),
 					ArticleID: msg.ArticleID,
@@ -106,18 +108,18 @@ func main() {
 				},
 				ArticleTitle: msg.Title,
 				ArticleURL:   msg.URL,
-				Books:        candidates,
+				Works:        candidates,
 			}
 
-			if err := mqttClient.Publish(mqttclient.TopicBooksCandidates, out); err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish BookCandidates")
+			if err := mqttClient.Publish(mqttclient.TopicWorksCandidates, out); err != nil {
+				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish WorkCandidates")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id":  msg.ArticleID,
-				"books_found": len(candidates),
-			}).Debug("Published book candidates")
+				"works_found": len(candidates),
+			}).Debug("Published work candidates")
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to articles/analyzed")

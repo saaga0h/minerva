@@ -18,7 +18,7 @@ MQTT_BROKER ?= tcp://localhost:1883
 
 .PHONY: help build build-primitives test clean docker run dev deps fmt lint \
         run-source-freshrss run-source-miniflux run-source-linkwarden run-extractor run-analyzer \
-        run-book-search run-koha-check run-notifier trigger mosquitto
+        run-book-search run-koha-check run-notifier run-store trigger mosquitto pg
 
 # Default target
 help: ## Show this help message
@@ -43,10 +43,11 @@ build-dev: ## Build all primitives for development with debug symbols
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-miniflux    ./cmd/source-miniflux/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-linkwarden  ./cmd/source-linkwarden/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/extractor          ./cmd/extractor/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/analyzer         ./cmd/analyzer/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/book-search      ./cmd/book-search/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/koha-check       ./cmd/koha-check/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/notifier         ./cmd/notifier/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/analyzer           ./cmd/analyzer/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/book-search        ./cmd/book-search/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/koha-check         ./cmd/koha-check/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/notifier           ./cmd/notifier/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/store              ./cmd/store/
 
 # Run tests
 test: ## Run tests
@@ -157,6 +158,7 @@ build-primitives: ## Build all primitive binaries (native, for local dev)
 	go build -o $(BUILD_DIR)/book-search        ./cmd/book-search/
 	go build -o $(BUILD_DIR)/koha-check         ./cmd/koha-check/
 	go build -o $(BUILD_DIR)/notifier           ./cmd/notifier/
+	go build -o $(BUILD_DIR)/store              ./cmd/store/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
 # ── Primitive run targets ─────────────────────────────────────────────────────
@@ -185,6 +187,9 @@ run-koha-check: build-primitives ## Run koha-check primitive
 run-notifier: build-primitives ## Run notifier primitive
 	$(BUILD_DIR)/notifier -config .env.dev
 
+run-store: build-primitives ## Run store primitive (knowledge base observer, requires PostgreSQL)
+	$(BUILD_DIR)/store -config .env.dev
+
 # ── Pipeline trigger ──────────────────────────────────────────────────────────
 
 trigger: ## Publish a pipeline trigger to MQTT (requires mosquitto_pub in PATH)
@@ -197,3 +202,9 @@ trigger: ## Publish a pipeline trigger to MQTT (requires mosquitto_pub in PATH)
 mosquitto: ## Start Mosquitto broker via docker compose
 	docker compose up mosquitto -d
 	@echo "Mosquitto started on localhost:1883"
+
+# ── Local PostgreSQL ──────────────────────────────────────────────────────────
+
+pg: ## Start PostgreSQL via docker compose
+	docker compose up postgres -d
+	@echo "PostgreSQL started on localhost:5432 (user: minerva, db: minerva)"

@@ -11,6 +11,7 @@ type Config struct {
 	App         AppConfig         `json:"app"`
 	Log         LogConfig         `json:"log"`
 	Database    DatabaseConfig    `json:"database"`
+	Store       StoreConfig       `json:"store"`
 	FreshRSS    FreshRSSConfig    `json:"fresh_rss"`
 	Linkwarden  LinkwardenConfig  `json:"linkwarden"`
 	Ollama      OllamaConfig      `json:"ollama"`
@@ -35,6 +36,11 @@ type LogConfig struct {
 
 type DatabaseConfig struct {
 	Path string `json:"path" env:"DATABASE_PATH" default:"./data/minerva.db"`
+}
+
+type StoreConfig struct {
+	DSN     string `json:"dsn" env:"STORE_DSN"`
+	Enabled bool   `json:"enabled" env:"STORE_ENABLED"`
 }
 
 type FreshRSSConfig struct {
@@ -112,6 +118,10 @@ func Load(configPath string) (*Config, error) {
 		},
 		Database: DatabaseConfig{
 			Path: getEnv("DATABASE_PATH", "./data/minerva.db"),
+		},
+		Store: StoreConfig{
+			DSN:     getEnv("STORE_DSN", "postgres://minerva:minerva@localhost:5432/minerva"),
+			Enabled: getEnv("STORE_ENABLED", "false") == "true",
 		},
 		FreshRSS: FreshRSSConfig{
 			BaseURL: getEnv("FRESHRSS_BASE_URL", ""),

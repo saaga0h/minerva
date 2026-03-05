@@ -26,53 +26,69 @@ type ExtractedArticle struct {
 	Content string `json:"content"` // clean text, ready for LLM
 }
 
+// ArticleEntities carries the named entity extraction from analyzer Pass 2.
+type ArticleEntities struct {
+	Facilities []string `json:"facilities"`
+	People     []string `json:"people"`
+	Locations  []string `json:"locations"`
+	Phenomena  []string `json:"phenomena"`
+}
+
 // AnalyzedArticle is published by the analyzer to TopicArticlesAnalyzed.
 // Content is intentionally dropped — it's large and not needed downstream.
 type AnalyzedArticle struct {
 	Envelope
-	URL      string   `json:"url"`
-	Title    string   `json:"title"`
-	Domain   string   `json:"domain"`
-	Summary  string   `json:"summary"`
-	Keywords []string `json:"keywords"`
-	Concepts []string `json:"concepts"`
-	Insights string   `json:"insights"`
+	URL           string          `json:"url"`
+	Title         string          `json:"title"`
+	Domain        string          `json:"domain"`
+	ArticleType   string          `json:"article_type"`   // Pass1: discovery|review|tutorial|opinion|news
+	Summary       string          `json:"summary"`
+	Keywords      []string        `json:"keywords"`
+	Concepts      []string        `json:"concepts"`
+	RelatedTopics []string        `json:"related_topics"` // Pass3 related topics, separate from keywords
+	Entities      ArticleEntities `json:"entities"`       // Full Pass2 entity extraction
+	Insights      string          `json:"insights"`
 }
 
-// BookCandidates is published by the book-search primitive to TopicBooksCandidates.
-type BookCandidates struct {
+// WorkCandidate represents a single discovered book or paper from any search source.
+type WorkCandidate struct {
+	ReferenceID  string   `json:"reference_id"`  // source:item-id, e.g. "openlibrary:/works/OL123W"
+	SearchSource string   `json:"search_source"` // "openlibrary" | "arxiv" | etc.
+	WorkType     string   `json:"work_type"`     // "book" | "paper"
+	Title        string   `json:"title"`
+	Authors      []string `json:"authors"`
+	ISBN         string   `json:"isbn"`
+	ISBN13       string   `json:"isbn13"`
+	ISSN         string   `json:"issn"`
+	DOI          string   `json:"doi"`
+	ArXivID      string   `json:"arxiv_id"`
+	PublishYear  int      `json:"publish_year"`
+	Publisher    string   `json:"publisher"`
+	CoverURL     string   `json:"cover_url"`
+	Relevance    float64  `json:"relevance"`
+}
+
+// WorkCandidates is published by any search primitive to TopicWorksCandidates.
+type WorkCandidates struct {
 	Envelope
 	ArticleTitle string          `json:"article_title"`
 	ArticleURL   string          `json:"article_url"`
-	Books        []BookCandidate `json:"books"`
+	Works        []WorkCandidate `json:"works"`
 }
 
-// BookCandidate represents a single book recommendation.
-type BookCandidate struct {
-	Title          string  `json:"title"`
-	Author         string  `json:"author"`
-	ISBN           string  `json:"isbn"`
-	ISBN13         string  `json:"isbn13"`
-	PublishYear    int     `json:"publish_year"`
-	Publisher      string  `json:"publisher"`
-	CoverURL       string  `json:"cover_url"`
-	OpenLibraryKey string  `json:"openlibrary_key"`
-	Relevance      float64 `json:"relevance"`
-}
-
-// CheckedBooks is published by the koha-check primitive to TopicBooksChecked.
-type CheckedBooks struct {
+// CheckedWorks is published by the koha-check primitive to TopicWorksChecked.
+type CheckedWorks struct {
 	Envelope
 	ArticleTitle string          `json:"article_title"`
 	ArticleURL   string          `json:"article_url"`
-	NewBooks     []BookCandidate `json:"new_books"`  // not in Koha catalog
-	OwnedBooks   []OwnedBook     `json:"owned_books"` // already owned
+	NewWorks     []WorkCandidate `json:"new_works"`   // not in Koha (or non-book type)
+	OwnedWorks   []OwnedWork     `json:"owned_works"` // found in Koha catalog
 }
 
-// OwnedBook is a book found in the Koha library catalog.
-type OwnedBook struct {
+// OwnedWork is a book confirmed present in the Koha library catalog.
+type OwnedWork struct {
 	Title  string `json:"title"`
-	Author string `json:"author"`
+	Author string `json:"author"` // primary author from Koha record
 	KohaID string `json:"koha_id"`
 }
 

@@ -66,21 +66,21 @@ func main() {
 
 	var dbMu sync.Mutex
 
-	// Subscribe to checked books — persist, notify, and signal completion
-	if err := mqttClient.Subscribe(mqttclient.TopicBooksChecked, func(payload []byte) {
+	// Subscribe to checked works — persist, notify, and signal completion
+	if err := mqttClient.Subscribe(mqttclient.TopicWorksChecked, func(payload []byte) {
 		data := make([]byte, len(payload))
 		copy(data, payload)
 		go func() {
-			var msg mqttclient.CheckedBooks
+			var msg mqttclient.CheckedWorks
 			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal CheckedBooks")
+				log.WithError(err).Warn("Failed to unmarshal CheckedWorks")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id": msg.ArticleID,
-				"new_books":  len(msg.NewBooks),
-				"owned":      len(msg.OwnedBooks),
+				"new_works":  len(msg.NewWorks),
+				"owned":      len(msg.OwnedWorks),
 			}).Debug("Persisting and notifying")
 
 			// Persist final book recommendations to SQLite — serialized to avoid write conflicts
@@ -93,20 +93,24 @@ func main() {
 				{Title: msg.ArticleTitle, URL: msg.ArticleURL},
 			}
 
-			newBooks := make([]services.NotificationBook, 0, len(msg.NewBooks))
-			for _, b := range msg.NewBooks {
+			newBooks := make([]services.NotificationBook, 0, len(msg.NewWorks))
+			for _, w := range msg.NewWorks {
+				author := ""
+				if len(w.Authors) > 0 {
+					author = w.Authors[0]
+				}
 				newBooks = append(newBooks, services.NotificationBook{
-					Title:     b.Title,
-					Author:    b.Author,
-					Relevance: b.Relevance,
+					Title:     w.Title,
+					Author:    author,
+					Relevance: w.Relevance,
 				})
 			}
 
-			ownedBooks := make([]services.OwnedBookSummary, 0, len(msg.OwnedBooks))
-			for _, b := range msg.OwnedBooks {
+			ownedBooks := make([]services.OwnedBookSummary, 0, len(msg.OwnedWorks))
+			for _, w := range msg.OwnedWorks {
 				ownedBooks = append(ownedBooks, services.OwnedBookSummary{
-					Title:  b.Title,
-					Author: b.Author,
+					Title:  w.Title,
+					Author: w.Author,
 				})
 			}
 
@@ -133,13 +137,13 @@ func main() {
 			}
 		}()
 	}); err != nil {
-		log.WithError(err).Fatal("Failed to subscribe to books/checked")
+		log.WithError(err).Fatal("Failed to subscribe to works/checked")
 	}
 
 	log.WithFields(logrus.Fields{
 		"broker":    brokerURL,
 		"client_id": clientID,
-	}).Info("Notifier primitive ready — listening for checked books")
+	}).Info("Notifier primitive ready — listening for checked works")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -147,7 +151,7 @@ func main() {
 	log.Info("Shutting down notifier primitive")
 }
 
-func persistRecommendations(log *logrus.Logger, db *database.DB, msg mqttclient.CheckedBooks) {
+func persistRecommendations(log *logrus.Logger, db *database.DB, msg mqttclient.CheckedWorks) {
 	// Save the article record first (notifier owns the final DB state)
 	article := &database.Article{
 		URL:   msg.ArticleURL,
@@ -173,44 +177,53 @@ func persistRecommendations(log *logrus.Logger, db *database.DB, msg mqttclient.
 		}
 	}
 
-	// Save new book recommendations
-	for _, b := range msg.NewBooks {
+	// Save new work recommendations (books and papers)
+	for _, w := range msg.NewWorks {
+		author := ""
+		if len(w.Authors) > 0 {
+			author = w.Authors[0]
+		}
+		// Map ReferenceID to OpenLibraryKey for backwards compatibility with the recommendations DB
+		openLibraryKey := ""
+		if w.SearchSource == "openlibrary" {
+			openLibraryKey = w.ReferenceID
+		}
 		rec := &database.BookRecommendation{
 			ArticleID:      article.ID,
-			Title:          b.Title,
-			Author:         b.Author,
-			ISBN:           b.ISBN,
-			ISBN13:         b.ISBN13,
-			PublishYear:    b.PublishYear,
-			Publisher:      b.Publisher,
-			CoverURL:       b.CoverURL,
-			OpenLibraryKey: b.OpenLibraryKey,
+			Title:          w.Title,
+			Author:         author,
+			ISBN:           w.ISBN,
+			ISBN13:         w.ISBN13,
+			PublishYear:    w.PublishYear,
+			Publisher:      w.Publisher,
+			CoverURL:       w.CoverURL,
+			OpenLibraryKey: openLibraryKey,
 			OwnedInKoha:    false,
-			Relevance:      b.Relevance,
+			Relevance:      w.Relevance,
 		}
 		if err := db.SaveBookRecommendation(rec); err != nil {
-			log.WithError(err).WithField("title", b.Title).Warn("Failed to save book recommendation")
+			log.WithError(err).WithField("title", w.Title).Warn("Failed to save work recommendation")
 		}
 	}
 
-	// Save owned books with owned_in_koha = true
-	for _, b := range msg.OwnedBooks {
+	// Save owned works with owned_in_koha = true
+	for _, w := range msg.OwnedWorks {
 		rec := &database.BookRecommendation{
 			ArticleID:   article.ID,
-			Title:       b.Title,
-			Author:      b.Author,
+			Title:       w.Title,
+			Author:      w.Author,
 			OwnedInKoha: true,
 		}
 		if err := db.SaveBookRecommendation(rec); err != nil {
-			log.WithError(err).WithField("title", b.Title).Warn("Failed to save owned book")
+			log.WithError(err).WithField("title", w.Title).Warn("Failed to save owned work")
 		}
 	}
 
 	log.WithFields(logrus.Fields{
 		"article_id": article.ID,
-		"new_books":  len(msg.NewBooks),
-		"owned":      len(msg.OwnedBooks),
-	}).Debug("Persisted book recommendations")
+		"new_works":  len(msg.NewWorks),
+		"owned":      len(msg.OwnedWorks),
+	}).Debug("Persisted work recommendations")
 }
 
 func getEnv(key, defaultValue string) string {

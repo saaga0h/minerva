@@ -36,6 +36,26 @@ services:
       - minerva_network
     restart: unless-stopped
 
+  postgres:
+    image: postgres:16
+    container_name: minerva_postgres
+    environment:
+      POSTGRES_DB: minerva
+      POSTGRES_USER: minerva
+      POSTGRES_PASSWORD: minerva
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - minerva_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minerva"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # Optional: Add development services
   ollama:
     image: ollama/ollama:latest
@@ -54,6 +74,8 @@ volumes:
   ollama_data:
     driver: local
   mosquitto_data:
+    driver: local
+  postgres_data:
     driver: local
 
 networks:
