@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -13,7 +14,7 @@ import (
 	"github.com/saaga0h/minerva/internal/config"
 	mqttclient "github.com/saaga0h/minerva/internal/mqtt"
 	"github.com/saaga0h/minerva/internal/services"
-	"github.com/saaga0h/minerva/internal/state"
+	"github.com/saaga0h/minerva/internal/store"
 	"github.com/saaga0h/minerva/pkg/logger"
 	"github.com/sirupsen/logrus"
 )
@@ -39,10 +40,10 @@ func main() {
 	logger.SetLevel(cfg.Log.Level)
 
 	// State DB — tracks which URLs have been published and completed
-	stateDBPath := getEnv("STATE_DB_PATH", "./data/freshrss-state.db")
-	stateDB, err := state.New(stateDBPath)
+	ctx := context.Background()
+	stateDB, err := store.New(ctx, cfg.Store.DSN)
 	if err != nil {
-		log.WithError(err).Fatal("Failed to open state DB")
+		log.WithError(err).Fatal("Failed to connect to PostgreSQL")
 	}
 	defer stateDB.Close()
 
@@ -73,7 +74,7 @@ func main() {
 				log.WithError(err).Warn("Failed to unmarshal ArticleComplete message")
 				return
 			}
-			if err := stateDB.MarkCompleteByArticleID(msg.ArticleID); err != nil {
+			if err := stateDB.MarkCompleteByArticleID(context.Background(), msg.ArticleID); err != nil {
 				log.WithError(err).Warn("Failed to mark article complete")
 			} else {
 				log.WithField("article_id", msg.ArticleID).Debug("Marked article complete")
@@ -97,7 +98,7 @@ func main() {
 	}).Info("FreshRSS source primitive ready — waiting for trigger")
 
 	// Re-publish any articles that were pending (incomplete) from a previous run
-	pending, err := stateDB.PendingArticles()
+	pending, err := stateDB.PendingArticles(ctx, "freshrss")
 	if err != nil {
 		log.WithError(err).Warn("Failed to query pending articles")
 	} else if len(pending) > 0 {
@@ -126,7 +127,7 @@ func main() {
 	log.Info("Shutting down FreshRSS source primitive")
 }
 
-func fetchAndPublish(log *logrus.Logger, freshRSS *services.FreshRSS, stateDB *state.DB, mqttClient *mqttclient.Client) {
+func fetchAndPublish(log *logrus.Logger, freshRSS *services.FreshRSS, stateDB *store.DB, mqttClient *mqttclient.Client) {
 	items, err := freshRSS.GetStarredItems()
 	if err != nil {
 		log.WithError(err).Error("Failed to fetch starred items from FreshRSS")
@@ -142,7 +143,7 @@ func fetchAndPublish(log *logrus.Logger, freshRSS *services.FreshRSS, stateDB *s
 			continue
 		}
 
-		complete, err := stateDB.IsComplete(url)
+		complete, err := stateDB.IsComplete(context.Background(), url)
 		if err != nil {
 			log.WithError(err).WithField("url", url).Warn("Failed to check completion state")
 			continue
@@ -152,7 +153,7 @@ func fetchAndPublish(log *logrus.Logger, freshRSS *services.FreshRSS, stateDB *s
 			continue
 		}
 
-		articleID := state.ArticleID(url)
+		articleID := store.ArticleID(url)
 
 		msg := mqttclient.RawArticle{
 			Envelope: mqttclient.Envelope{
@@ -170,7 +171,7 @@ func fetchAndPublish(log *logrus.Logger, freshRSS *services.FreshRSS, stateDB *s
 			continue
 		}
 
-		if err := stateDB.MarkPublished(url, articleID, item.Title); err != nil {
+		if err := stateDB.MarkPublished(context.Background(), url, articleID, item.Title, "freshrss"); err != nil {
 			log.WithError(err).WithField("url", url).Warn("Failed to mark article as published")
 		}
 

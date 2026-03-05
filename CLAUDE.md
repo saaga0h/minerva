@@ -6,7 +6,7 @@ Transforms RSS starred articles and bookmarks into book recommendations via a pi
 
 ```bash
 make mosquitto          # start Mosquitto broker (docker compose)
-make pg                 # start PostgreSQL broker (docker compose) — required for store primitive
+make pg                 # start PostgreSQL (docker compose) — required for source primitives and store
 make build-primitives   # native build for local dev
 make build              # Linux/amd64 production build
 
@@ -19,7 +19,7 @@ make run-analyzer
 make run-book-search
 make run-koha-check
 make run-notifier
-make run-store          # optional — populates knowledge base (requires PostgreSQL)
+make run-store          # optional — populates knowledge base (requires PostgreSQL, as do source primitives)
 
 make trigger            # fire pipeline (requires mosquitto_pub in PATH)
 make query              # inspect recommendations DB
@@ -28,7 +28,7 @@ make fmt && make lint
 
 No tests currently exist.
 
-CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency).
+CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency in the notifier's recommendations DB).
 
 ## Constraints
 
@@ -40,7 +40,7 @@ CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency).
 
 **`cmd/store` is a pure observer** — it does not publish to any pipeline topic. The pipeline runs normally without it. Start it before the trigger if knowledge base population is wanted.
 
-**PostgreSQL must be running** before `cmd/store` starts. `make pg` uses docker compose. `pgxpool` (pgx/v5) is concurrency-safe — no `sync.Mutex` needed around store calls (unlike the SQLite notifier).
+**PostgreSQL must be running** before source primitives (freshrss, miniflux, linkwarden) and `cmd/store` start. `make pg` uses docker compose. `pgxpool` (pgx/v5) is concurrency-safe — no `sync.Mutex` needed around store calls (unlike the SQLite notifier). Source primitives will fatal on startup if `STORE_DSN` is unreachable.
 
 **MQTT topic names changed**: `minerva/books/candidates` → `minerva/works/candidates`, `minerva/books/checked` → `minerva/works/checked`. All primitives must use the new topic strings simultaneously — mixed old/new strings drop messages silently.
 
@@ -66,7 +66,7 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 
 **ArticleID** = first 16 hex chars of SHA256(URL). Stable across all pipeline stages and sources.
 
-**Adding a source primitive:** service in `internal/services/`, binary in `cmd/source-<name>/`. Subscribe to `minerva/pipeline/trigger` and `minerva/articles/complete`. Use `internal/state/` for dedup. Publish `mqtt.RawArticle` to `minerva/articles/raw`. Add Makefile targets.
+**Adding a source primitive:** service in `internal/services/`, binary in `cmd/source-<name>/`. Subscribe to `minerva/pipeline/trigger` and `minerva/articles/complete`. Use `internal/store` for dedup: call `store.IsComplete`, `store.MarkPublished`, `store.MarkCompleteByArticleID`, `store.PendingArticles(ctx, "source-name")`. Use `store.ArticleID(url)` for the stable article ID. Publish `mqtt.RawArticle` to `minerva/articles/raw`. Add Makefile targets.
 
 **Adding a search primitive** (e.g. arXiv): publish `mqtt.WorkCandidates` to `minerva/works/candidates`. Set `WorkType` to `"book"` or `"paper"`. Set `ReferenceID` to `"source-name:source-item-id"` (e.g. `"arxiv:2301.07041"`). Populate `ISBN13`/`DOI`/`ArXivID` where available — the store uses these for cross-source dedup. Multiple search primitives publish concurrently; koha-check filters by `work_type == "book"` before Koha lookup.
 
@@ -77,3 +77,5 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 - Linkwarden pagination is cursor-based: cursor starts at 0, each page's next cursor is the `id` of the last item returned. Stops when response array is empty. The title field in the JSON is `name`, not `title`.
 - `make trigger` requires `mosquitto_pub` installed on the host (not in the container)
 - Git tag `pre-mqtt-refactor` marks the last monolith state (cmd/minerva/ + internal/pipeline/ — now deleted)
+- `STATE_DB_PATH` env var and `./data/*-state.db` SQLite files are obsolete — article state is now in PostgreSQL (`articles.published_at` / `articles.completed_at`). Remove from any `.env` files.
+- Completed-article dedup is now shared across all sources — if freshrss completes an article, miniflux and linkwarden will also skip it on their next trigger run (was per-source SQLite before).

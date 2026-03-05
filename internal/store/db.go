@@ -60,8 +60,10 @@ func (db *DB) migrate(ctx context.Context) error {
 					coalesce(content, '') || ' ' ||
 					coalesce(summary, ''))
 			) STORED,
+			published_at    TIMESTAMPTZ,
 			extracted_at    TIMESTAMPTZ,
 			analyzed_at     TIMESTAMPTZ,
+			completed_at    TIMESTAMPTZ,
 			created_at      TIMESTAMPTZ DEFAULT now()
 		)`,
 
@@ -70,6 +72,11 @@ func (db *DB) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_articles_concepts    ON articles USING GIN (concepts)`,
 		`CREATE INDEX IF NOT EXISTS idx_articles_domain      ON articles (domain)`,
 		`CREATE INDEX IF NOT EXISTS idx_articles_created_at  ON articles (created_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_articles_pending     ON articles (source, published_at) WHERE completed_at IS NULL`,
+
+		// Idempotent column additions for existing databases
+		`ALTER TABLE articles ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ`,
+		`ALTER TABLE articles ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
 
 		`CREATE TABLE IF NOT EXISTS works (
 			work_id         SERIAL PRIMARY KEY,

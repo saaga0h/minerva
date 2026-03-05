@@ -2,10 +2,81 @@ package store
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"time"
 )
+
+// ArticleID returns a stable, short ID for a URL: the first 16 hex chars of its SHA256.
+// This is the canonical article identifier used across all pipeline stages.
+func ArticleID(url string) string {
+	sum := sha256.Sum256([]byte(url))
+	return fmt.Sprintf("%x", sum[:8])
+}
+
+// ArticleState holds the state for a pending article (published but not yet completed).
+type ArticleState struct {
+	URL         string
+	ArticleID   string
+	Title       string
+	PublishedAt time.Time
+}
+
+// IsComplete returns true if the full pipeline has finished for this URL.
+func (db *DB) IsComplete(ctx context.Context, url string) (bool, error) {
+	var exists bool
+	err := db.pool.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM articles WHERE url = $1 AND completed_at IS NOT NULL)`,
+		url,
+	).Scan(&exists)
+	return exists, err
+}
+
+// MarkPublished records that this URL has been published to the MQTT bus by the given source.
+// Idempotent: preserves the original published_at if the record already exists.
+func (db *DB) MarkPublished(ctx context.Context, url, articleID, title, source string) error {
+	_, err := db.pool.Exec(ctx, `
+		INSERT INTO articles (article_id, url, title, source, published_at)
+		VALUES ($1, $2, $3, $4, now())
+		ON CONFLICT (url) DO UPDATE
+			SET published_at = COALESCE(articles.published_at, EXCLUDED.published_at)
+	`, articleID, url, title, source)
+	return err
+}
+
+// MarkCompleteByArticleID records that the full pipeline has finished for this article.
+func (db *DB) MarkCompleteByArticleID(ctx context.Context, articleID string) error {
+	_, err := db.pool.Exec(ctx,
+		`UPDATE articles SET completed_at = now() WHERE article_id = $1`,
+		articleID,
+	)
+	return err
+}
+
+// PendingArticles returns articles published by the given source that never completed.
+// Called on startup to re-publish articles from a previous incomplete run.
+func (db *DB) PendingArticles(ctx context.Context, source string) ([]ArticleState, error) {
+	rows, err := db.pool.Query(ctx, `
+		SELECT url, article_id, title, published_at
+		FROM articles
+		WHERE source = $1 AND published_at IS NOT NULL AND completed_at IS NULL
+	`, source)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []ArticleState
+	for rows.Next() {
+		var a ArticleState
+		if err := rows.Scan(&a.URL, &a.ArticleID, &a.Title, &a.PublishedAt); err != nil {
+			return nil, err
+		}
+		result = append(result, a)
+	}
+	return result, rows.Err()
+}
 
 // ArticleAnalysis holds the full AnalyzedArticle payload for storage.
 type ArticleAnalysis struct {
