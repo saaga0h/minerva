@@ -30,6 +30,7 @@ type MinifuxItem struct {
 	URL         string `json:"url"`
 	Title       string `json:"title"`
 	PublishedAt string `json:"published_at"`
+	Content     string `json:"content"` // RSS item body (HTML)
 }
 
 // minifluxEntry mirrors the Miniflux /v1/entries API response.
@@ -38,6 +39,7 @@ type minifluxEntry struct {
 	URL         string `json:"url"`
 	Title       string `json:"title"`
 	PublishedAt string `json:"published_at"`
+	Content     string `json:"content"` // RSS item body (HTML)
 	Starred     bool   `json:"starred"`
 	Status      string `json:"status"`
 }
@@ -103,6 +105,7 @@ func (m *Miniflux) GetStarredEntries() ([]MinifuxItem, error) {
 			URL:         entry.URL,
 			Title:       entry.Title,
 			PublishedAt: entry.PublishedAt,
+			Content:     entry.Content,
 		})
 	}
 

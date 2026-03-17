@@ -18,7 +18,8 @@ MQTT_BROKER ?= tcp://localhost:1883
 
 .PHONY: help build build-primitives test clean docker run dev deps fmt lint \
         run-source-freshrss run-source-miniflux run-source-linkwarden run-extractor run-analyzer \
-        run-book-search run-koha-check run-notifier run-store trigger mosquitto pg
+        run-search-openlibrary run-search-arxiv run-search-semantic-scholar \
+        run-koha-check run-notifier run-store trigger mosquitto pg
 
 # Default target
 help: ## Show this help message
@@ -43,11 +44,13 @@ build-dev: ## Build all primitives for development with debug symbols
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-miniflux    ./cmd/source-miniflux/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/source-linkwarden  ./cmd/source-linkwarden/
 	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/extractor          ./cmd/extractor/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/analyzer           ./cmd/analyzer/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/book-search        ./cmd/book-search/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/koha-check         ./cmd/koha-check/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/notifier           ./cmd/notifier/
-	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/store              ./cmd/store/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/analyzer              ./cmd/analyzer/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/search-openlibrary    ./cmd/search-openlibrary/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/search-arxiv           ./cmd/search-arxiv/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/koha-check             ./cmd/koha-check/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/notifier               ./cmd/notifier/
+	go build -gcflags="all=-N -l" -o $(BUILD_DIR)/store                  ./cmd/store/
 
 # Run tests
 test: ## Run tests
@@ -88,7 +91,9 @@ run: build ## Build and show instructions for running primitives
 	@echo "  $(BUILD_DIR)/source-linkwarden  -config .env"
 	@echo "  $(BUILD_DIR)/extractor          -config .env"
 	@echo "  $(BUILD_DIR)/analyzer         -config .env"
-	@echo "  $(BUILD_DIR)/book-search      -config .env"
+	@echo "  $(BUILD_DIR)/search-openlibrary    -config .env"
+	@echo "  $(BUILD_DIR)/search-arxiv           -config .env"
+	@echo "  $(BUILD_DIR)/search-semantic-scholar -config .env"
 	@echo "  $(BUILD_DIR)/koha-check       -config .env"
 	@echo "  $(BUILD_DIR)/notifier         -config .env"
 	@echo "Then trigger the pipeline: make trigger"
@@ -155,7 +160,9 @@ build-primitives: ## Build all primitive binaries (native, for local dev)
 	go build -o $(BUILD_DIR)/source-linkwarden  ./cmd/source-linkwarden/
 	go build -o $(BUILD_DIR)/extractor          ./cmd/extractor/
 	go build -o $(BUILD_DIR)/analyzer           ./cmd/analyzer/
-	go build -o $(BUILD_DIR)/book-search        ./cmd/book-search/
+	go build -o $(BUILD_DIR)/search-openlibrary     ./cmd/search-openlibrary/
+	go build -o $(BUILD_DIR)/search-arxiv            ./cmd/search-arxiv/
+	go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/
 	go build -o $(BUILD_DIR)/koha-check         ./cmd/koha-check/
 	go build -o $(BUILD_DIR)/notifier           ./cmd/notifier/
 	go build -o $(BUILD_DIR)/store              ./cmd/store/
@@ -178,8 +185,14 @@ run-extractor: build-primitives ## Run extractor primitive
 run-analyzer: build-primitives ## Run analyzer primitive
 	$(BUILD_DIR)/analyzer -config .env.dev
 
-run-book-search: build-primitives ## Run book-search primitive
-	$(BUILD_DIR)/book-search -config .env.dev
+run-search-openlibrary: build-primitives ## Run search-openlibrary primitive
+	$(BUILD_DIR)/search-openlibrary -config .env.dev
+
+run-search-arxiv: build-primitives ## Run search-arxiv primitive
+	$(BUILD_DIR)/search-arxiv -config .env.dev
+
+run-search-semantic-scholar: build-primitives ## Run search-semantic-scholar primitive
+	$(BUILD_DIR)/search-semantic-scholar -config .env.dev
 
 run-koha-check: build-primitives ## Run koha-check primitive
 	$(BUILD_DIR)/koha-check -config .env.dev

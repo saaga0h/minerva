@@ -66,14 +66,23 @@ func main() {
 			}
 
 			log.WithFields(logrus.Fields{
-				"article_id": msg.ArticleID,
-				"url":        msg.URL,
+				"article_id":   msg.ArticleID,
+				"url":          msg.URL,
+				"has_content":  msg.Content != "",
 			}).Debug("Extracting content")
 
-			content, err := extractor.ExtractContent(msg.URL)
-			if err != nil {
-				log.WithError(err).WithField("url", msg.URL).Warn("Extraction failed — article dropped for this run")
-				return
+			var content *services.ExtractedContent
+			if msg.Content != "" {
+				// Source already supplied content (e.g. RSS body from Miniflux) — skip URL fetch
+				content = extractor.ExtractFromContent(msg.Content, msg.Title, msg.URL)
+				log.WithField("article_id", msg.ArticleID).Debug("Using pre-supplied content, skipping URL fetch")
+			} else {
+				var err error
+				content, err = extractor.ExtractContent(msg.URL)
+				if err != nil {
+					log.WithError(err).WithField("url", msg.URL).Warn("Extraction failed — article dropped for this run")
+					return
+				}
 			}
 
 			// Use extracted title if available and the original title was empty

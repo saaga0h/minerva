@@ -12,6 +12,7 @@ import (
 	"github.com/go-shiori/go-readability"
 	"github.com/saaga0h/minerva/internal/config"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/net/html"
 )
 
 type ContentExtractor struct {
@@ -33,6 +34,46 @@ func NewContentExtractor(cfg config.ExtractorConfig) *ContentExtractor {
 			Timeout: time.Duration(cfg.Timeout) * time.Second,
 		},
 		logger: logrus.New(),
+	}
+}
+
+// ExtractFromContent strips HTML and cleans pre-supplied content without fetching the URL.
+func (e *ContentExtractor) ExtractFromContent(rawContent, title, url string) *ExtractedContent {
+	return &ExtractedContent{
+		Title:   title,
+		Content: e.cleanForOllama(stripHTML(rawContent)),
+		URL:     url,
+	}
+}
+
+// stripHTML extracts plain text from HTML using the x/net/html tokenizer.
+// Skips script/style element content entirely. Handles malformed markup safely.
+func stripHTML(input string) string {
+	var sb strings.Builder
+	tokenizer := html.NewTokenizer(strings.NewReader(input))
+	skip := false
+	for {
+		tt := tokenizer.Next()
+		switch tt {
+		case html.ErrorToken:
+			return sb.String()
+		case html.StartTagToken, html.SelfClosingTagToken:
+			name, _ := tokenizer.TagName()
+			tag := string(name)
+			if tag == "script" || tag == "style" {
+				skip = true
+			}
+		case html.EndTagToken:
+			name, _ := tokenizer.TagName()
+			tag := string(name)
+			if tag == "script" || tag == "style" {
+				skip = false
+			}
+		case html.TextToken:
+			if !skip {
+				sb.Write(tokenizer.Text())
+			}
+		}
 	}
 }
 
@@ -58,15 +99,29 @@ func (e *ContentExtractor) ExtractContent(url string) (*ExtractedContent, error)
 	return e.extractManually(url)
 }
 
-// extractWithReadability uses go-readability for generic extraction
+// extractWithReadability fetches the URL with browser-like headers then parses with readability.
 func (e *ContentExtractor) extractWithReadability(url string) (*ExtractedContent, error) {
-	// FromURL is the correct method
-	article, err := readability.FromURL(url, time.Duration(e.config.Timeout)*time.Second)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	e.setBrowserHeaders(req)
+
+	resp, err := e.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code %d", resp.StatusCode)
+	}
+
+	article, err := readability.FromReader(resp.Body, req.URL)
 	if err != nil {
 		return nil, fmt.Errorf("readability parse failed: %w", err)
 	}
 
-	// Clean content for Ollama
 	cleanContent := e.cleanForOllama(article.TextContent)
 
 	return &ExtractedContent{
@@ -76,6 +131,16 @@ func (e *ContentExtractor) extractWithReadability(url string) (*ExtractedContent
 	}, nil
 }
 
+// setBrowserHeaders sets common browser-like HTTP headers.
+// Accept-Encoding is intentionally omitted — Go's http.Transport adds gzip automatically
+// and handles decompression; setting it explicitly disables that transparent handling.
+// TLS fingerprint-based blocking (Cloudflare JA3) cannot be bypassed with headers alone.
+func (e *ContentExtractor) setBrowserHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+}
+
 // extractManually is the fallback manual extraction method
 func (e *ContentExtractor) extractManually(url string) (*ExtractedContent, error) {
 	req, err := http.NewRequest("GET", url, nil)
@@ -83,8 +148,7 @@ func (e *ContentExtractor) extractManually(url string) (*ExtractedContent, error
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", e.config.UserAgent)
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	e.setBrowserHeaders(req)
 
 	resp, err := e.client.Do(req)
 	if err != nil {

@@ -39,7 +39,7 @@ func main() {
 
 	// MQTT client
 	brokerURL := getEnv("MQTT_BROKER_URL", "tcp://localhost:1883")
-	clientID := getEnv("MQTT_CLIENT_ID", "minerva-book-search")
+	clientID := getEnv("MQTT_CLIENT_ID", "minerva-search-arxiv")
 	mqttClient, err := mqttclient.NewClient(mqttclient.ClientConfig{
 		BrokerURL: brokerURL,
 		ClientID:  clientID,
@@ -50,11 +50,11 @@ func main() {
 	defer mqttClient.Disconnect()
 	mqttClient.SetLogger(log)
 
-	// OpenLibrary service
-	openLibrary := services.NewOpenLibrary(cfg.OpenLibrary)
-	openLibrary.SetLogger(log)
+	// arXiv service
+	arxiv := services.NewArXiv(cfg.ArXiv)
+	arxiv.SetLogger(log)
 
-	// Subscribe to analyzed articles — search for book recommendations
+	// Subscribe to analyzed articles — search for paper recommendations
 	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
 		data := make([]byte, len(payload))
 		copy(data, payload)
@@ -66,40 +66,33 @@ func main() {
 			}
 
 			if len(msg.Keywords) == 0 {
-				log.WithField("article_id", msg.ArticleID).Warn("No keywords — skipping book search")
+				log.WithField("article_id", msg.ArticleID).Warn("No keywords — skipping arXiv search")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id":     msg.ArticleID,
 				"keywords_count": len(msg.Keywords),
-			}).Debug("Searching books via OpenLibrary")
+			}).Debug("Searching papers via arXiv")
 
-			recommendations, err := openLibrary.SearchBooks(msg.Keywords, msg.Insights)
+			papers, err := arxiv.SearchPapers(msg.Keywords, msg.Insights)
 			if err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("Book search failed — article dropped for this run")
+				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("arXiv search failed — skipping")
 				return
 			}
 
-			// Convert services.BookRecommendation to mqttclient.WorkCandidate
-			candidates := make([]mqttclient.WorkCandidate, 0, len(recommendations))
-			for _, rec := range recommendations {
-				candidates = append(candidates, mqttclient.WorkCandidate{
-					ReferenceID:  "openlibrary:" + rec.OpenLibraryKey,
-					SearchSource: "openlibrary",
-					WorkType:     "book",
-					Title:        rec.Title,
-					Authors:      []string{rec.Author},
-					ISBN:         rec.ISBN,
-					ISBN13:       rec.ISBN13,
-					PublishYear:  rec.PublishYear,
-					Publisher:    rec.Publisher,
-					CoverURL:     rec.CoverURL,
-					Relevance:    rec.Relevance,
+			candidates := make([]mqttclient.BookCandidate, 0, len(papers))
+			for _, p := range papers {
+				candidates = append(candidates, mqttclient.BookCandidate{
+					Title:       p.Title,
+					Author:      p.Authors,
+					PublishYear: p.PublishYear,
+					SourceKey:   "arxiv:" + p.ArXivID,
+					Relevance:   p.Relevance,
 				})
 			}
 
-			out := mqttclient.WorkCandidates{
+			out := mqttclient.BookCandidates{
 				Envelope: mqttclient.Envelope{
 					MessageID: generateID(),
 					ArticleID: msg.ArticleID,
@@ -108,18 +101,18 @@ func main() {
 				},
 				ArticleTitle: msg.Title,
 				ArticleURL:   msg.URL,
-				Works:        candidates,
+				Books:        candidates,
 			}
 
-			if err := mqttClient.Publish(mqttclient.TopicWorksCandidates, out); err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish WorkCandidates")
+			if err := mqttClient.Publish(mqttclient.TopicBooksCandidates, out); err != nil {
+				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish BookCandidates")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
-				"article_id":  msg.ArticleID,
-				"works_found": len(candidates),
-			}).Debug("Published work candidates")
+				"article_id":   msg.ArticleID,
+				"papers_found": len(candidates),
+			}).Debug("Published arXiv paper candidates")
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to articles/analyzed")
@@ -128,12 +121,12 @@ func main() {
 	log.WithFields(logrus.Fields{
 		"broker":    brokerURL,
 		"client_id": clientID,
-	}).Info("Book-search primitive ready — listening for analyzed articles")
+	}).Info("search-arxiv primitive ready — listening for analyzed articles")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
-	log.Info("Shutting down book-search primitive")
+	log.Info("Shutting down search-arxiv primitive")
 }
 
 func getEnv(key, defaultValue string) string {

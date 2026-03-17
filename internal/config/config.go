@@ -8,18 +8,20 @@ import (
 )
 
 type Config struct {
-	App         AppConfig         `json:"app"`
-	Log         LogConfig         `json:"log"`
-	Database    DatabaseConfig    `json:"database"`
-	Store       StoreConfig       `json:"store"`
-	FreshRSS    FreshRSSConfig    `json:"fresh_rss"`
-	Linkwarden  LinkwardenConfig  `json:"linkwarden"`
-	Ollama      OllamaConfig      `json:"ollama"`
-	SearXNG     SearXNGConfig     `json:"searxng"`
-	OpenLibrary OpenLibraryConfig `json:"openlibrary"`
-	Extractor   ExtractorConfig   `json:"extractor"`
-	Koha        KohaConfig        `json:"koha"`
-	Ntfy        NtfyConfig        `json:"ntfy"`
+	App             AppConfig             `json:"app"`
+	Log             LogConfig             `json:"log"`
+	Database        DatabaseConfig        `json:"database"`
+	Store           StoreConfig           `json:"store"`
+	FreshRSS        FreshRSSConfig        `json:"fresh_rss"`
+	Linkwarden      LinkwardenConfig      `json:"linkwarden"`
+	Ollama          OllamaConfig          `json:"ollama"`
+	SearXNG         SearXNGConfig         `json:"searxng"`
+	OpenLibrary     OpenLibraryConfig     `json:"openlibrary"`
+	ArXiv           ArXivConfig           `json:"arxiv"`
+	SemanticScholar SemanticScholarConfig `json:"semantic_scholar"`
+	Extractor       ExtractorConfig       `json:"extractor"`
+	Koha            KohaConfig            `json:"koha"`
+	Ntfy            NtfyConfig            `json:"ntfy"`
 }
 
 type AppConfig struct {
@@ -65,6 +67,15 @@ type OllamaConfig struct {
 
 type OpenLibraryConfig struct {
 	Timeout int `json:"timeout" env:"OPENLIBRARY_TIMEOUT" default:"30"`
+}
+
+type ArXivConfig struct {
+	Timeout int `json:"timeout" env:"ARXIV_TIMEOUT" default:"30"`
+}
+
+type SemanticScholarConfig struct {
+	Timeout int    `json:"timeout" env:"SEMANTIC_SCHOLAR_TIMEOUT" default:"30"`
+	APIKey  string `json:"api_key" env:"SEMANTIC_SCHOLAR_API_KEY"`
 }
 
 type SearXNGConfig struct {
@@ -146,6 +157,13 @@ func Load(configPath string) (*Config, error) {
 		},
 		OpenLibrary: OpenLibraryConfig{
 			Timeout: getEnvInt("OPENLIBRARY_TIMEOUT", 30),
+		},
+		ArXiv: ArXivConfig{
+			Timeout: getEnvInt("ARXIV_TIMEOUT", 30),
+		},
+		SemanticScholar: SemanticScholarConfig{
+			Timeout: getEnvInt("SEMANTIC_SCHOLAR_TIMEOUT", 30),
+			APIKey:  getEnv("SEMANTIC_SCHOLAR_API_KEY", ""),
 		},
 		Extractor: ExtractorConfig{
 			UserAgent: getEnv("EXTRACTOR_USER_AGENT", "Minerva/1.0"),

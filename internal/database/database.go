@@ -40,19 +40,19 @@ type RelatedReading struct {
 
 /* New proper book recommendations */
 type BookRecommendation struct {
-	ID             int       `json:"id"`
-	ArticleID      int       `json:"article_id"`
-	Title          string    `json:"title"`
-	Author         string    `json:"author"`
-	ISBN           string    `json:"isbn"`
-	ISBN13         string    `json:"isbn13"`
-	PublishYear    int       `json:"publish_year"`
-	Publisher      string    `json:"publisher"`
-	CoverURL       string    `json:"cover_url"`
-	OpenLibraryKey string    `json:"openlibrary_key"`
-	OwnedInKoha    bool      `json:"owned_in_koha"`
-	Relevance      float64   `json:"relevance"`
-	CreatedAt      time.Time `json:"created_at"`
+	ID          int       `json:"id"`
+	ArticleID   int       `json:"article_id"`
+	Title       string    `json:"title"`
+	Author      string    `json:"author"`
+	ISBN        string    `json:"isbn"`
+	ISBN13      string    `json:"isbn13"`
+	PublishYear int       `json:"publish_year"`
+	Publisher   string    `json:"publisher"`
+	CoverURL    string    `json:"cover_url"`
+	SourceKey   string    `json:"source_key"`
+	OwnedInKoha bool      `json:"owned_in_koha"`
+	Relevance   float64   `json:"relevance"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type OwnedBook struct {
@@ -150,6 +150,10 @@ func (db *DB) migrate() error {
 			return fmt.Errorf("failed to execute migration: %w", err)
 		}
 	}
+
+	// Rename openlibrary_key → source_key. Silently ignored if already renamed
+	// (SQLite errors when the old column doesn't exist).
+	db.conn.Exec(`ALTER TABLE book_recommendations RENAME COLUMN openlibrary_key TO source_key`)
 
 	return nil
 }
@@ -255,9 +259,9 @@ func (db *DB) UpdateArticleProcessing(articleID int, summary, insights string, k
 
 // SaveBookRecommendation saves a book recommendation
 func (db *DB) SaveBookRecommendation(rec *BookRecommendation) error {
-	query := `INSERT INTO book_recommendations 
-			  (article_id, title, author, isbn, isbn13, publish_year, publisher, 
-			   cover_url, openlibrary_key, owned_in_koha, relevance)
+	query := `INSERT INTO book_recommendations
+			  (article_id, title, author, isbn, isbn13, publish_year, publisher,
+			   cover_url, source_key, owned_in_koha, relevance)
 			  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := db.conn.Exec(query,
@@ -269,7 +273,7 @@ func (db *DB) SaveBookRecommendation(rec *BookRecommendation) error {
 		rec.PublishYear,
 		rec.Publisher,
 		rec.CoverURL,
-		rec.OpenLibraryKey,
+		rec.SourceKey,
 		rec.OwnedInKoha,
 		rec.Relevance,
 	)
@@ -357,9 +361,9 @@ func (db *DB) GetProcessedArticlesWithoutRecommendations() ([]*Article, error) {
 }
 
 func (db *DB) GetUncheckedRecommendations() ([]BookRecommendation, error) {
-	query := `SELECT id, article_id, title, author, isbn, isbn13, publish_year, 
-			  publisher, cover_url, openlibrary_key, relevance
-			  FROM book_recommendations 
+	query := `SELECT id, article_id, title, author, isbn, isbn13, publish_year,
+			  publisher, cover_url, source_key, relevance
+			  FROM book_recommendations
 			  WHERE owned_in_koha = 0`
 
 	rows, err := db.conn.Query(query)
@@ -381,7 +385,7 @@ func (db *DB) GetUncheckedRecommendations() ([]BookRecommendation, error) {
 			&rec.PublishYear,
 			&rec.Publisher,
 			&rec.CoverURL,
-			&rec.OpenLibraryKey,
+			&rec.SourceKey,
 			&rec.Relevance,
 		)
 		if err != nil {

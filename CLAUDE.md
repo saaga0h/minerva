@@ -1,6 +1,6 @@
 # Minerva
 
-Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, book-search, koha-check, notifier, store. Each is a long-running binary communicating through Mosquitto.
+Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, search-openlibrary, search-arxiv, search-semantic-scholar, koha-check, notifier, store. Each is a long-running binary communicating through Mosquitto.
 
 ## Build & Test
 
@@ -16,7 +16,9 @@ make run-source-miniflux
 make run-source-linkwarden
 make run-extractor
 make run-analyzer
-make run-book-search
+make run-search-openlibrary
+make run-search-arxiv
+make run-search-semantic-scholar
 make run-koha-check
 make run-notifier
 make run-store          # optional — populates knowledge base (requires PostgreSQL, as do source primitives)
@@ -79,3 +81,6 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 - Git tag `pre-mqtt-refactor` marks the last monolith state (cmd/minerva/ + internal/pipeline/ — now deleted)
 - `STATE_DB_PATH` env var and `./data/*-state.db` SQLite files are obsolete — article state is now in PostgreSQL (`articles.published_at` / `articles.completed_at`). Remove from any `.env` files.
 - Completed-article dedup is now shared across all sources — if freshrss completes an article, miniflux and linkwarden will also skip it on their next trigger run (was per-source SQLite before).
+- The three search primitives run in parallel — all subscribe to `minerva/articles/analyzed` and publish to `minerva/works/candidates`. All three must be started before the trigger fires.
+- `WorkCandidate.ReferenceID` uses URI-style prefixes: `openlibrary:/works/OL123W`, `arxiv:2301.00001`, `s2:abc123def`.
+- `SEMANTIC_SCHOLAR_API_KEY` is optional but rate limits are severe without it.

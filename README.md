@@ -7,7 +7,7 @@ Minerva transforms RSS feed items into book recommendations by orchestrating mul
 1. Fetches starred articles from Miniflux (or FreshRSS)
 2. Extracts and cleans article content
 3. Analyzes content using local LLM (Ollama)
-4. Searches for relevant books (OpenLibrary)
+4. Searches for relevant books and papers (OpenLibrary, arXiv, Semantic Scholar)
 5. Validates against your library catalog (Koha)
 6. Sends personalized notifications (Ntfy)
 
@@ -19,8 +19,9 @@ Each stage of the pipeline is an independent long-running binary. They communica
 
 ```
 [trigger] → source-freshrss ─┐
-            source-miniflux  ─┤→ extractor → analyzer → book-search → koha-check → notifier
-                              └─────────────────────────────────────────────────────↑
+            source-miniflux  ─┤→ extractor → analyzer → search-openlibrary ─┐
+                              └────────────────────────┬─→ search-arxiv ────┤→ koha-check → notifier
+                                                       └─→ search-semantic-scholar ↑
                                                                         (ArticleComplete)
 ```
 
@@ -31,8 +32,8 @@ Each stage of the pipeline is an independent long-running binary. They communica
 | `minerva/pipeline/trigger` | external / `make trigger` | source-freshrss, source-miniflux |
 | `minerva/articles/raw` | source primitives | extractor |
 | `minerva/articles/extracted` | extractor | analyzer |
-| `minerva/articles/analyzed` | analyzer | book-search |
-| `minerva/books/candidates` | book-search | koha-check |
+| `minerva/articles/analyzed` | analyzer | search-openlibrary, search-arxiv, search-semantic-scholar |
+| `minerva/books/candidates` | search-openlibrary, search-arxiv, search-semantic-scholar | koha-check |
 | `minerva/books/checked` | koha-check | notifier |
 | `minerva/articles/complete` | notifier | source-freshrss, source-miniflux |
 
@@ -66,13 +67,15 @@ published → pipeline stages → ArticleComplete → marked done in source stat
 ```
 minerva/
 ├── cmd/
-│   ├── source-freshrss/  # FreshRSS source primitive
-│   ├── source-miniflux/  # Miniflux source primitive
-│   ├── extractor/        # HTML content extraction
-│   ├── analyzer/         # Ollama LLM analysis
-│   ├── book-search/      # OpenLibrary search
-│   ├── koha-check/       # Library catalog validation
-│   └── notifier/         # Ntfy push notifications
+│   ├── source-freshrss/         # FreshRSS source primitive
+│   ├── source-miniflux/         # Miniflux source primitive
+│   ├── extractor/               # HTML content extraction
+│   ├── analyzer/                # Ollama LLM analysis
+│   ├── search-openlibrary/      # OpenLibrary book search
+│   ├── search-arxiv/            # arXiv paper search
+│   ├── search-semantic-scholar/ # Semantic Scholar paper search
+│   ├── koha-check/              # Library catalog validation
+│   └── notifier/                # Ntfy push notifications
 ├── internal/
 │   ├── config/           # Environment-based configuration
 │   ├── database/         # Book recommendations SQLite DB
@@ -84,9 +87,10 @@ minerva/
 │       ├── extractor.go
 │       ├── ollama.go
 │       ├── openlibrary.go
+│       ├── arxiv.go
+│       ├── semanticscholar.go
 │       ├── koha.go
-│       ├── ntfy.go
-│       └── searxng.go
+│       └── ntfy.go
 ├── pkg/logger/           # Structured logging
 ├── deploy/
 │   ├── nomad/            # Nomad job definitions
@@ -133,7 +137,9 @@ make run-source-miniflux
 make run-source-freshrss
 make run-extractor
 make run-analyzer
-make run-book-search
+make run-search-openlibrary
+make run-search-arxiv
+make run-search-semantic-scholar
 make run-koha-check
 make run-notifier
 
@@ -183,6 +189,9 @@ Create `.env.dev` or `.env`, see .env.example for details
 | `FRESHRSS_API_KEY` | Fever API key | - |
 | `OLLAMA_BASE_URL` | Ollama endpoint | http://localhost:11434 |
 | `OLLAMA_MODEL` | Model name | llama2 |
+| `ARXIV_TIMEOUT` | arXiv API timeout (seconds) | 30 |
+| `SEMANTIC_SCHOLAR_TIMEOUT` | Semantic Scholar timeout (seconds) | 30 |
+| `SEMANTIC_SCHOLAR_API_KEY` | Semantic Scholar API key (optional, raises rate limit) | - |
 | `KOHA_BASE_URL` | Library API endpoint | - |
 | `NTFY_TOPIC` | Notification topic | - |
 
@@ -384,6 +393,7 @@ LOG_LEVEL=debug make run-analyzer
 ## Future Enhancements
 
 - ~~Multi-pass LLM analysis for deeper understanding~~
+- ~~Parallel search primitives (OpenLibrary, arXiv, Semantic Scholar)~~
 - Semantic similarity scoring using embeddings
 - Feedback loop for recommendation quality
 - Web UI for browsing recommendations

@@ -168,8 +168,9 @@ func fetchAndPublish(log *logrus.Logger, miniflux *services.Miniflux, stateDB *s
 				Source:    "miniflux",
 				Timestamp: time.Now(),
 			},
-			URL:   url,
-			Title: item.Title,
+			URL:     url,
+			Title:   item.Title,
+			Content: item.Content,
 		}
 
 		if err := mqttClient.Publish(mqttclient.TopicArticlesRaw, msg); err != nil {

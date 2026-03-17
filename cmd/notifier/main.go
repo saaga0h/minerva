@@ -183,23 +183,18 @@ func persistRecommendations(log *logrus.Logger, db *database.DB, msg mqttclient.
 		if len(w.Authors) > 0 {
 			author = w.Authors[0]
 		}
-		// Map ReferenceID to OpenLibraryKey for backwards compatibility with the recommendations DB
-		openLibraryKey := ""
-		if w.SearchSource == "openlibrary" {
-			openLibraryKey = w.ReferenceID
-		}
 		rec := &database.BookRecommendation{
-			ArticleID:      article.ID,
-			Title:          w.Title,
-			Author:         author,
-			ISBN:           w.ISBN,
-			ISBN13:         w.ISBN13,
-			PublishYear:    w.PublishYear,
-			Publisher:      w.Publisher,
-			CoverURL:       w.CoverURL,
-			OpenLibraryKey: openLibraryKey,
-			OwnedInKoha:    false,
-			Relevance:      w.Relevance,
+			ArticleID:   article.ID,
+			Title:       w.Title,
+			Author:      author,
+			ISBN:        w.ISBN,
+			ISBN13:      w.ISBN13,
+			PublishYear: w.PublishYear,
+			Publisher:   w.Publisher,
+			CoverURL:    w.CoverURL,
+			SourceKey:   w.ReferenceID,
+			OwnedInKoha: false,
+			Relevance:   w.Relevance,
 		}
 		if err := db.SaveBookRecommendation(rec); err != nil {
 			log.WithError(err).WithField("title", w.Title).Warn("Failed to save work recommendation")

@@ -11,11 +11,13 @@ type Envelope struct {
 }
 
 // RawArticle is published by source primitives to TopicArticlesRaw.
-// No content — the extractor fetches full content from the URL.
+// Content is optional — when non-empty the extractor skips the URL fetch and
+// uses this directly (e.g. RSS item body from Miniflux). May be HTML or plain text.
 type RawArticle struct {
 	Envelope
-	URL   string `json:"url"`
-	Title string `json:"title"`
+	URL     string `json:"url"`
+	Title   string `json:"title"`
+	Content string `json:"content,omitempty"`
 }
 
 // ExtractedArticle is published by the extractor to TopicArticlesExtracted.
