@@ -20,22 +20,25 @@ Each stage of the pipeline is an independent long-running binary. They communica
 ```
 [trigger] → source-freshrss ─┐
             source-miniflux  ─┤→ extractor → analyzer → search-openlibrary ─┐
-                              └────────────────────────┬─→ search-arxiv ────┤→ koha-check → notifier
-                                                       └─→ search-semantic-scholar ↑
-                                                                        (ArticleComplete)
+            source-linkwarden ┘                        ├─→ search-arxiv ────┤→ koha-check ─┐
+                                                       └─→ search-semantic-scholar ↑      │
+                                                                              (storage) ←─┘
+                                                                                 ↓
+                                                                              notifier (digest)
 ```
 
 ### Topic Chain
 
 | Topic | Publisher | Subscriber(s) |
 |-------|-----------|---------------|
-| `minerva/pipeline/trigger` | external / `make trigger` | source-freshrss, source-miniflux |
+| `minerva/pipeline/trigger` | external / `make trigger` | source-freshrss, source-miniflux, source-linkwarden |
 | `minerva/articles/raw` | source primitives | extractor |
 | `minerva/articles/extracted` | extractor | analyzer |
-| `minerva/articles/analyzed` | analyzer | search-openlibrary, search-arxiv, search-semantic-scholar |
-| `minerva/books/candidates` | search-openlibrary, search-arxiv, search-semantic-scholar | koha-check |
-| `minerva/books/checked` | koha-check | notifier |
-| `minerva/articles/complete` | notifier | source-freshrss, source-miniflux |
+| `minerva/articles/analyzed` | analyzer | storage, search-openlibrary, search-arxiv, search-semantic-scholar |
+| `minerva/books/candidates` | search-openlibrary, search-arxiv, search-semantic-scholar | storage |
+| `minerva/books/checked` | koha-check | storage |
+| `minerva/articles/complete` | storage | source-freshrss, source-miniflux, source-linkwarden |
+| `minerva/pipeline/digest` | external / `make digest` | notifier |
 
 ### Core Design Principles
 
@@ -53,13 +56,13 @@ mqttClient.Subscribe(mqtt.TopicArticlesRaw, func(payload []byte) {
 ```
 
 **2. Source Pluggability**
-Source primitives are interchangeable. Miniflux is the primary source; FreshRSS is also supported. Both subscribe to `minerva/pipeline/trigger` and publish `RawArticle` messages to `minerva/articles/raw`.
+Source primitives are interchangeable. Miniflux is the primary source; FreshRSS and Linkwarden are also supported. All subscribe to `minerva/pipeline/trigger` and publish `RawArticle` messages to `minerva/articles/raw`.
 
 **3. Data Persistence**
-Each source primitive maintains its own SQLite state DB for dedup and completion tracking. The notifier writes to the book recommendations DB.
+Each source primitive maintains its own SQLite state DB for dedup and completion tracking. The storage primitive owns all book recommendations database writes.
 
 ```
-published → pipeline stages → ArticleComplete → marked done in source state DB
+published → pipeline stages → storage → ArticleComplete → marked done in source state DB
 ```
 
 ## Project Structure
@@ -69,13 +72,15 @@ minerva/
 ├── cmd/
 │   ├── source-freshrss/         # FreshRSS source primitive
 │   ├── source-miniflux/         # Miniflux source primitive
+│   ├── source-linkwarden/       # Linkwarden source primitive
 │   ├── extractor/               # HTML content extraction
 │   ├── analyzer/                # Ollama LLM analysis
 │   ├── search-openlibrary/      # OpenLibrary book search
 │   ├── search-arxiv/            # arXiv paper search
 │   ├── search-semantic-scholar/ # Semantic Scholar paper search
 │   ├── koha-check/              # Library catalog validation
-│   └── notifier/                # Ntfy push notifications
+│   ├── storage/                 # Recommendations DB writes + article completion
+│   └── notifier/                # Digest notifications (Ntfy)
 ├── internal/
 │   ├── config/           # Environment-based configuration
 │   ├── database/         # Book recommendations SQLite DB
@@ -107,7 +112,8 @@ minerva/
 - Go 1.21+
 - Mosquitto MQTT broker (via Docker Compose or system install)
 - Miniflux instance with API key (primary source)
-- FreshRSS instance with Fever API enabled (optional second source)
+- FreshRSS instance with Fever API enabled (optional source)
+- Linkwarden instance (optional source)
 - Ollama running locally or remote
 - Koha library system (optional)
 - Ntfy server (optional)
@@ -135,16 +141,21 @@ make build-primitives
 # Run each primitive in a separate terminal
 make run-source-miniflux
 make run-source-freshrss
+make run-source-linkwarden
 make run-extractor
 make run-analyzer
 make run-search-openlibrary
 make run-search-arxiv
 make run-search-semantic-scholar
 make run-koha-check
+make run-storage
 make run-notifier
 
 # Trigger the pipeline
 make trigger
+
+# Send a digest notification (requires storage and notifier running)
+make digest
 
 # Reset state DB
 make reset-db
@@ -182,7 +193,7 @@ Create `.env.dev` or `.env`, see .env.example for details
 | `MQTT_BROKER_URL` | Mosquitto broker address | tcp://localhost:1883 |
 | `MQTT_CLIENT_ID` | Unique client ID per primitive | primitive-specific |
 | `STATE_DB_PATH` | Per-source SQLite state file | ./data/<source>-state.db |
-| `DATABASE_PATH` | Book recommendations DB (notifier) | ./data/minerva.db |
+| `DATABASE_PATH` | Book recommendations DB (storage) | ./data/minerva.db |
 | `MINIFLUX_BASE_URL` | Miniflux instance URL | - |
 | `MINIFLUX_API_KEY` | Miniflux API key | - |
 | `FRESHRSS_BASE_URL` | Fever API endpoint | - |
@@ -253,9 +264,10 @@ All defined in `internal/mqtt/messages.go`:
 - `AnalyzedArticle` — summary, keywords, concepts, insights; no Content
 - `BookCandidates` / `CheckedBooks` / `ArticleComplete`
 
-Every message type embeds `Envelope`: MessageID (UUID), ArticleID, Source, Timestamp.
+Every message type embeds `Envelope`: MessageID (UUID), ArticleID, Source, SourceID, Timestamp.
 
 **Article ID** is the first 16 hex chars of the SHA256 of the URL — stable across sources and pipeline stages.
+**Source ID** is a source-native identifier, e.g. `miniflux:12345`, `freshrss:789`, `linkwarden:456`.
 
 ## Monitoring
 
@@ -289,7 +301,7 @@ Nomad job configured for log collection:
 
 ## Database Schema
 
-Book recommendations DB (written by notifier):
+Book recommendations DB (written by storage primitive):
 
 ```sql
 articles

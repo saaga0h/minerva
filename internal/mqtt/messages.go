@@ -4,9 +4,10 @@ import "time"
 
 // Envelope is the common header carried in every message.
 type Envelope struct {
-	MessageID string    `json:"message_id"` // UUID, unique per message
-	ArticleID string    `json:"article_id"` // stable ID: SHA256 of URL
-	Source    string    `json:"source"`     // e.g. "freshrss", "miniflux"
+	MessageID string    `json:"message_id"`           // UUID, unique per message
+	ArticleID string    `json:"article_id"`           // stable ID: SHA256 of URL
+	Source    string    `json:"source"`               // e.g. "freshrss", "miniflux"
+	SourceID  string    `json:"source_id,omitempty"`  // source-native ID, e.g. "miniflux:12345"
 	Timestamp time.Time `json:"timestamp"`
 }
 

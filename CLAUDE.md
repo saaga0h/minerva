@@ -19,11 +19,13 @@ make run-analyzer
 make run-search-openlibrary
 make run-search-arxiv
 make run-search-semantic-scholar
+make run-storage
 make run-koha-check
 make run-notifier
 make run-store          # optional — populates knowledge base (requires PostgreSQL, as do source primitives)
 
 make trigger            # fire pipeline (requires mosquitto_pub in PATH)
+make digest             # send digest notification (requires mosquitto_pub in PATH)
 make query              # inspect recommendations DB
 make fmt && make lint
 ```
@@ -34,7 +36,7 @@ CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency in the notifier's recomm
 
 ## Constraints
 
-**Startup order is critical.** paho uses `CleanSession=true` — no persistent sessions. Every primitive must be connected to Mosquitto *before* the trigger fires. Messages published to a topic with no active subscriber are lost permanently.
+**Startup order is critical.** paho uses `CleanSession=true` — no persistent sessions. Every primitive must be connected to Mosquitto *before* the trigger fires. Messages published to a topic with no active subscriber are lost permanently. `storage` must be connected before any search primitive fires, or `BookCandidates` messages are lost and `ArticleComplete` is never published.
 
 **Mosquitto must be running** before any primitive starts. `make mosquitto` uses docker compose.
 
@@ -64,7 +66,11 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 
 **Ollama calls are serialized** with `sync.Mutex` in the analyzer — Ollama handles one inference at a time. Timeout is 300s per pass × 3 passes = up to 15min per article.
 
-**SQLite writes in the notifier are serialized** with `sync.Mutex` — concurrent goroutines writing to the recommendations DB need protection.
+**SQLite writes in storage are serialized** with `sync.Mutex` — storage is the sole writer to the recommendations DB. The notifier opens the same SQLite file read-only; start storage before running the first digest or the DB file may not exist yet.
+
+**storage publishes `ArticleComplete`**, not notifier. If storage is not running, source primitives never receive `ArticleComplete` and will re-publish the same articles on the next trigger.
+
+**Notifier is digest-only.** It subscribes only to `minerva/pipeline/digest` and performs no DB writes. Use `make digest` to trigger a notification.
 
 **ArticleID** = first 16 hex chars of SHA256(URL). Stable across all pipeline stages and sources.
 
@@ -84,3 +90,5 @@ mqttClient.Subscribe(topic, func(payload []byte) {
 - The three search primitives run in parallel — all subscribe to `minerva/articles/analyzed` and publish to `minerva/works/candidates`. All three must be started before the trigger fires.
 - `WorkCandidate.ReferenceID` uses URI-style prefixes: `openlibrary:/works/OL123W`, `arxiv:2301.00001`, `s2:abc123def`.
 - `SEMANTIC_SCHOLAR_API_KEY` is optional but rate limits are severe without it.
+- `analyzed_articles.article_id` is the hex Envelope ArticleID (TEXT), not the integer PK from the `articles` table. `book_recommendations` joins to it via `envelope_article_id` (TEXT column).
+- Koha ownership match is by title within an article (`UpdateKohaOwnershipByTitle`). `OwnedBook` carries no `source_key`. Title collisions within a single article are extremely unlikely but this is a known approximation.

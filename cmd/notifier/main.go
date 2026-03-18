@@ -2,12 +2,11 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
 	"os/signal"
-	"sync"
+	"strings"
 	"syscall"
 	"time"
 
@@ -40,7 +39,7 @@ func main() {
 	}
 	logger.SetLevel(cfg.Log.Level)
 
-	// Final output DB — book recommendations storage
+	// Open recommendations DB read-only (storage primitive owns all writes)
 	db, err := database.New(cfg.Database.Path)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to open recommendations DB")
@@ -64,86 +63,64 @@ func main() {
 	ntfy := services.NewNtfy(cfg.Ntfy)
 	ntfy.SetLogger(log)
 
-	var dbMu sync.Mutex
+	// digestHours controls how far back the digest window reaches
+	digestHours := getEnvDuration("NOTIFIER_DIGEST_HOURS", 24*time.Hour)
 
-	// Subscribe to checked works — persist, notify, and signal completion
-	if err := mqttClient.Subscribe(mqttclient.TopicWorksChecked, func(payload []byte) {
-		data := make([]byte, len(payload))
-		copy(data, payload)
+	// Subscribe to digest trigger — query DB and send ntfy notification
+	if err := mqttClient.Subscribe(mqttclient.TopicPipelineDigest, func(_ []byte) {
+		log.Info("Digest trigger received — building recommendation digest")
 		go func() {
-			var msg mqttclient.CheckedWorks
-			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal CheckedWorks")
+			since := time.Now().Add(-digestHours)
+			entries, err := db.GetRecommendationsSince(since)
+			if err != nil {
+				log.WithError(err).Error("Failed to query recommendations for digest")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
-				"article_id": msg.ArticleID,
-				"new_works":  len(msg.NewWorks),
-				"owned":      len(msg.OwnedWorks),
-			}).Debug("Persisting and notifying")
+				"entries": len(entries),
+				"since":   since.Format(time.RFC3339),
+			}).Info("Sending digest notification")
 
-			// Persist final book recommendations to SQLite — serialized to avoid write conflicts
-			dbMu.Lock()
-			persistRecommendations(log, db, msg)
-			dbMu.Unlock()
-
-			// Build notification data
-			articleSummaries := []services.ArticleSummary{
-				{Title: msg.ArticleTitle, URL: msg.ArticleURL},
-			}
-
-			newBooks := make([]services.NotificationBook, 0, len(msg.NewWorks))
-			for _, w := range msg.NewWorks {
-				author := ""
-				if len(w.Authors) > 0 {
-					author = w.Authors[0]
+			if len(entries) == 0 {
+				notification := services.Notification{
+					Topic:   cfg.Ntfy.Topic,
+					Title:   "Minerva digest — no new recommendations",
+					Message: fmt.Sprintf("No new book recommendations in the past %s.", formatDuration(digestHours)),
 				}
-				newBooks = append(newBooks, services.NotificationBook{
-					Title:     w.Title,
-					Author:    author,
-					Relevance: w.Relevance,
-				})
+				ntfy.Send(context.Background(), notification) //nolint:errcheck
+				return
 			}
 
-			ownedBooks := make([]services.OwnedBookSummary, 0, len(msg.OwnedWorks))
-			for _, w := range msg.OwnedWorks {
-				ownedBooks = append(ownedBooks, services.OwnedBookSummary{
-					Title:  w.Title,
-					Author: w.Author,
-				})
+			msg := buildDigestMessage(entries)
+			newCount := 0
+			for _, e := range entries {
+				if !e.OwnedInKoha {
+					newCount++
+				}
 			}
 
-			ctx := context.Background()
-			if err := ntfy.NotifyPipelineComplete(ctx, articleSummaries, newBooks, ownedBooks, 0); err != nil {
-				log.WithError(err).Warn("Failed to send Ntfy notification")
+			notification := services.Notification{
+				Topic:    cfg.Ntfy.Topic,
+				Title:    fmt.Sprintf("Minerva digest — %d new recommendations", newCount),
+				Message:  msg,
+				Tags:     []string{"minerva", "books"},
+				Priority: cfg.Ntfy.Priority,
 			}
 
-			// Publish completion event — source primitives listen for this
-			complete := mqttclient.ArticleComplete{
-				Envelope: mqttclient.Envelope{
-					MessageID: generateID(),
-					ArticleID: msg.ArticleID,
-					Source:    "notifier",
-					Timestamp: time.Now(),
-				},
-				CompletedAt: time.Now(),
-			}
-
-			if err := mqttClient.Publish(mqttclient.TopicArticlesComplete, complete); err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish ArticleComplete")
-			} else {
-				log.WithField("article_id", msg.ArticleID).Debug("Published ArticleComplete")
+			if err := ntfy.Send(context.Background(), notification); err != nil {
+				log.WithError(err).Warn("Failed to send digest notification")
 			}
 		}()
 	}); err != nil {
-		log.WithError(err).Fatal("Failed to subscribe to works/checked")
+		log.WithError(err).Fatal("Failed to subscribe to pipeline/digest")
 	}
 
 	log.WithFields(logrus.Fields{
-		"broker":    brokerURL,
-		"client_id": clientID,
-	}).Info("Notifier primitive ready — listening for checked works")
+		"broker":       brokerURL,
+		"client_id":    clientID,
+		"digest_hours": digestHours.Hours(),
+	}).Info("Notifier primitive ready — waiting for digest trigger")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -151,74 +128,41 @@ func main() {
 	log.Info("Shutting down notifier primitive")
 }
 
-func persistRecommendations(log *logrus.Logger, db *database.DB, msg mqttclient.CheckedWorks) {
-	// Save the article record first (notifier owns the final DB state)
-	article := &database.Article{
-		URL:   msg.ArticleURL,
-		Title: msg.ArticleTitle,
+// buildDigestMessage formats DigestEntry slice into a human-readable ntfy message body.
+func buildDigestMessage(entries []database.DigestEntry) string {
+	// Group by article URL
+	type articleGroup struct {
+		title string
+		url   string
+		books []database.DigestEntry
 	}
 
-	// Check if article already exists; if not, save it
-	exists, err := db.ArticleExists(msg.ArticleURL)
-	if err != nil {
-		log.WithError(err).Warn("Failed to check article existence")
+	seen := make(map[string]int)
+	var groups []articleGroup
+
+	for _, e := range entries {
+		idx, ok := seen[e.ArticleURL]
+		if !ok {
+			idx = len(groups)
+			seen[e.ArticleURL] = idx
+			groups = append(groups, articleGroup{title: e.ArticleTitle, url: e.ArticleURL})
+		}
+		groups[idx].books = append(groups[idx].books, e)
 	}
 
-	if !exists {
-		article.Content = "" // content not retained in final DB
-		if err := db.SaveArticle(article); err != nil {
-			log.WithError(err).Warn("Failed to save article to DB")
-			return
+	var sb strings.Builder
+	for _, g := range groups {
+		sb.WriteString(fmt.Sprintf("📰 %s\n", g.title))
+		for _, b := range g.books {
+			owned := ""
+			if b.OwnedInKoha {
+				owned = " ✅"
+			}
+			sb.WriteString(fmt.Sprintf("  • %s — %s%s\n", b.BookTitle, b.BookAuthor, owned))
 		}
-	} else {
-		// Retrieve existing article ID for foreign key
-		if id, err := db.GetArticleIDByURL(msg.ArticleURL); err == nil {
-			article.ID = id
-		}
+		sb.WriteString("\n")
 	}
-
-	// Save new work recommendations (books and papers)
-	for _, w := range msg.NewWorks {
-		author := ""
-		if len(w.Authors) > 0 {
-			author = w.Authors[0]
-		}
-		rec := &database.BookRecommendation{
-			ArticleID:   article.ID,
-			Title:       w.Title,
-			Author:      author,
-			ISBN:        w.ISBN,
-			ISBN13:      w.ISBN13,
-			PublishYear: w.PublishYear,
-			Publisher:   w.Publisher,
-			CoverURL:    w.CoverURL,
-			SourceKey:   w.ReferenceID,
-			OwnedInKoha: false,
-			Relevance:   w.Relevance,
-		}
-		if err := db.SaveBookRecommendation(rec); err != nil {
-			log.WithError(err).WithField("title", w.Title).Warn("Failed to save work recommendation")
-		}
-	}
-
-	// Save owned works with owned_in_koha = true
-	for _, w := range msg.OwnedWorks {
-		rec := &database.BookRecommendation{
-			ArticleID:   article.ID,
-			Title:       w.Title,
-			Author:      w.Author,
-			OwnedInKoha: true,
-		}
-		if err := db.SaveBookRecommendation(rec); err != nil {
-			log.WithError(err).WithField("title", w.Title).Warn("Failed to save owned work")
-		}
-	}
-
-	log.WithFields(logrus.Fields{
-		"article_id": article.ID,
-		"new_works":  len(msg.NewWorks),
-		"owned":      len(msg.OwnedWorks),
-	}).Debug("Persisted work recommendations")
+	return strings.TrimSpace(sb.String())
 }
 
 func getEnv(key, defaultValue string) string {
@@ -226,6 +170,30 @@ func getEnv(key, defaultValue string) string {
 		return v
 	}
 	return defaultValue
+}
+
+// getEnvDuration reads an env var as a number of hours (integer) and returns a time.Duration.
+func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	var hours float64
+	if _, err := fmt.Sscanf(v, "%f", &hours); err != nil || hours <= 0 {
+		return defaultVal
+	}
+	return time.Duration(hours * float64(time.Hour))
+}
+
+func formatDuration(d time.Duration) string {
+	h := d.Hours()
+	if h < 1 {
+		return fmt.Sprintf("%.0f minutes", d.Minutes())
+	}
+	if h == float64(int(h)) {
+		return fmt.Sprintf("%.0f hours", h)
+	}
+	return fmt.Sprintf("%.1f hours", h)
 }
 
 func generateID() string {

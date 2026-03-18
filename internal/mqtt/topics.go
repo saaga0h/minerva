@@ -26,4 +26,8 @@ const (
 	// TopicPipelineTrigger is the external trigger topic.
 	// Source primitives subscribe here — Nomad batch job or manual run publishes here.
 	TopicPipelineTrigger = "minerva/pipeline/trigger"
+
+	// TopicPipelineDigest triggers the notifier to send a digest notification.
+	// Notifier subscribes here; publish with `make digest`.
+	TopicPipelineDigest = "minerva/pipeline/digest"
 )

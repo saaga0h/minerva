@@ -166,6 +166,7 @@ func fetchAndPublish(log *logrus.Logger, miniflux *services.Miniflux, stateDB *s
 				MessageID: generateID(),
 				ArticleID: articleID,
 				Source:    "miniflux",
+				SourceID:  fmt.Sprintf("miniflux:%d", item.ID),
 				Timestamp: time.Now(),
 			},
 			URL:     url,

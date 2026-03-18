@@ -160,6 +160,7 @@ func fetchAndPublish(log *logrus.Logger, freshRSS *services.FreshRSS, stateDB *s
 				MessageID: generateID(),
 				ArticleID: articleID,
 				Source:    "freshrss",
+				SourceID:  "freshrss:" + item.ID,
 				Timestamp: time.Now(),
 			},
 			URL:   url,

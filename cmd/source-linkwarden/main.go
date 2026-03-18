@@ -164,6 +164,7 @@ func fetchAndPublish(log *logrus.Logger, linkwarden *services.Linkwarden, stateD
 				MessageID: generateID(),
 				ArticleID: articleID,
 				Source:    "linkwarden",
+				SourceID:  fmt.Sprintf("linkwarden:%d", item.ID),
 				Timestamp: time.Now(),
 			},
 			URL:   url,

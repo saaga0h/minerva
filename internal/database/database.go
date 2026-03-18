@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,33 @@ type RelatedReading struct {
 	Type      string    `json:"type"` // "article", "blog", "discussion", "paper"
 	Relevance float64   `json:"relevance"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// AnalyzedArticleRecord holds LLM-extracted metadata for an article.
+// ArticleID is the hex Envelope ArticleID (TEXT), not the integer PK from the articles table.
+type AnalyzedArticleRecord struct {
+	ArticleID string
+	SourceID  string
+	URL       string
+	Title     string
+	Domain    string
+	Summary   string
+	Keywords  []string
+	Concepts  []string
+	Insights  string
+}
+
+// DigestEntry is returned by GetRecommendationsSince for the notifier digest.
+type DigestEntry struct {
+	ArticleTitle string
+	ArticleURL   string
+	SourceID     string
+	BookTitle    string
+	BookAuthor   string
+	SourceKey    string
+	OwnedInKoha  bool
+	Relevance    float64
+	CreatedAt    time.Time
 }
 
 /* New proper book recommendations */
@@ -143,6 +171,21 @@ func (db *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_book_recommendations_isbn ON book_recommendations(isbn)`,
 		`CREATE INDEX IF NOT EXISTS idx_book_recommendations_isbn13 ON book_recommendations(isbn13)`,
 		`CREATE INDEX IF NOT EXISTS idx_related_reading_article_id ON related_reading(article_id)`,
+
+		`CREATE TABLE IF NOT EXISTS analyzed_articles (
+			article_id  TEXT PRIMARY KEY,
+			source_id   TEXT,
+			url         TEXT NOT NULL,
+			title       TEXT,
+			domain      TEXT,
+			summary     TEXT,
+			keywords    TEXT,
+			concepts    TEXT,
+			insights    TEXT,
+			created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_analyzed_articles_article_id ON analyzed_articles(article_id)`,
 	}
 
 	for _, migration := range migrations {
@@ -154,6 +197,24 @@ func (db *DB) migrate() error {
 	// Rename openlibrary_key → source_key. Silently ignored if already renamed
 	// (SQLite errors when the old column doesn't exist).
 	db.conn.Exec(`ALTER TABLE book_recommendations RENAME COLUMN openlibrary_key TO source_key`)
+
+	// Deduplicate book_recommendations before creating the unique index.
+	// Keeps the row with the lowest id for each (article_id, source_key) pair.
+	// Silent — safe to run repeatedly.
+	db.conn.Exec(`DELETE FROM book_recommendations
+		WHERE id NOT IN (
+			SELECT MIN(id) FROM book_recommendations GROUP BY article_id, source_key
+		)`)
+
+	// Create unique index for upsert support. Silent — fails harmlessly if already exists.
+	db.conn.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_book_recs_article_source
+		ON book_recommendations(article_id, source_key)`)
+
+	// Add koha_id column to book_recommendations (silent — fails if already exists).
+	db.conn.Exec(`ALTER TABLE book_recommendations ADD COLUMN koha_id TEXT`)
+
+	// Add envelope_article_id column to book_recommendations (silent — fails if already exists).
+	db.conn.Exec(`ALTER TABLE book_recommendations ADD COLUMN envelope_article_id TEXT`)
 
 	return nil
 }
@@ -407,6 +468,106 @@ func (db *DB) MarkBookAsOwned(recommendationID int) error {
 	}
 
 	return nil
+}
+
+// SaveAnalyzedArticle stores LLM-extracted metadata for an article.
+// Uses INSERT OR REPLACE so re-analysis cleanly overwrites the previous record.
+func (db *DB) SaveAnalyzedArticle(a AnalyzedArticleRecord) error {
+	keywordsJSON, _ := json.Marshal(a.Keywords)
+	conceptsJSON, _ := json.Marshal(a.Concepts)
+
+	_, err := db.conn.Exec(
+		`INSERT OR REPLACE INTO analyzed_articles
+			(article_id, source_id, url, title, domain, summary, keywords, concepts, insights)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		a.ArticleID, a.SourceID, a.URL, a.Title, a.Domain, a.Summary,
+		string(keywordsJSON), string(conceptsJSON), a.Insights,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to save analyzed article: %w", err)
+	}
+	return nil
+}
+
+// UpsertBookCandidate inserts or updates a book recommendation.
+// Matches on (article_id, source_key); updates all fields except owned_in_koha and koha_id.
+func (db *DB) UpsertBookCandidate(articleDBID int, envelopeArticleID string, rec BookRecommendation) error {
+	_, err := db.conn.Exec(
+		`INSERT INTO book_recommendations
+			(article_id, envelope_article_id, title, author, isbn, isbn13, publish_year,
+			 publisher, cover_url, source_key, owned_in_koha, relevance)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+		ON CONFLICT(article_id, source_key) DO UPDATE SET
+			title=excluded.title,
+			author=excluded.author,
+			isbn=excluded.isbn,
+			isbn13=excluded.isbn13,
+			publish_year=excluded.publish_year,
+			publisher=excluded.publisher,
+			cover_url=excluded.cover_url,
+			relevance=excluded.relevance,
+			envelope_article_id=excluded.envelope_article_id`,
+		articleDBID, envelopeArticleID,
+		rec.Title, rec.Author, rec.ISBN, rec.ISBN13, rec.PublishYear,
+		rec.Publisher, rec.CoverURL, rec.SourceKey, rec.Relevance,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to upsert book candidate: %w", err)
+	}
+	return nil
+}
+
+// UpdateKohaOwnershipByTitle sets owned_in_koha and koha_id for a book matched by title
+// within a given article. Title+article is a reliable enough match since title collisions
+// within a single article are extremely unlikely.
+func (db *DB) UpdateKohaOwnershipByTitle(articleDBID int, title string, kohaID string) error {
+	_, err := db.conn.Exec(
+		`UPDATE book_recommendations SET owned_in_koha=1, koha_id=?
+		 WHERE article_id=? AND title=?`,
+		kohaID, articleDBID, title,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update koha ownership: %w", err)
+	}
+	return nil
+}
+
+// GetRecommendationsSince returns book recommendations created after the given time,
+// joined with analyzed_articles for article metadata.
+func (db *DB) GetRecommendationsSince(since time.Time) ([]DigestEntry, error) {
+	rows, err := db.conn.Query(
+		`SELECT
+			COALESCE(aa.title, a.title), a.url,
+			COALESCE(aa.source_id, ''),
+			br.title, br.author, br.source_key,
+			br.owned_in_koha, br.relevance, br.created_at
+		FROM book_recommendations br
+		JOIN articles a ON a.id = br.article_id
+		LEFT JOIN analyzed_articles aa ON aa.article_id = br.envelope_article_id
+		WHERE br.created_at >= ?
+		ORDER BY br.created_at DESC`,
+		since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recommendations: %w", err)
+	}
+	defer rows.Close()
+
+	var entries []DigestEntry
+	for rows.Next() {
+		var e DigestEntry
+		var ownedInt int
+		if err := rows.Scan(
+			&e.ArticleTitle, &e.ArticleURL, &e.SourceID,
+			&e.BookTitle, &e.BookAuthor, &e.SourceKey,
+			&ownedInt, &e.Relevance, &e.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan digest entry: %w", err)
+		}
+		e.OwnedInKoha = ownedInt != 0
+		entries = append(entries, e)
+	}
+	return entries, nil
 }
 
 // parseKeywordsJSON converts JSON string to string slice
