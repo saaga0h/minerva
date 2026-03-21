@@ -81,18 +81,21 @@ func main() {
 				return
 			}
 
-			candidates := make([]mqttclient.BookCandidate, 0, len(papers))
+			candidates := make([]mqttclient.WorkCandidate, 0, len(papers))
 			for _, p := range papers {
-				candidates = append(candidates, mqttclient.BookCandidate{
-					Title:       p.Title,
-					Author:      p.Authors,
-					PublishYear: p.PublishYear,
-					SourceKey:   "arxiv:" + p.ArXivID,
-					Relevance:   p.Relevance,
+				candidates = append(candidates, mqttclient.WorkCandidate{
+					ReferenceID:  "arxiv:" + p.ArXivID,
+					SearchSource: "arxiv",
+					WorkType:     "paper",
+					Title:        p.Title,
+					Authors:      []string{p.Authors},
+					ArXivID:      p.ArXivID,
+					PublishYear:  p.PublishYear,
+					Relevance:    p.Relevance,
 				})
 			}
 
-			out := mqttclient.BookCandidates{
+			out := mqttclient.WorkCandidates{
 				Envelope: mqttclient.Envelope{
 					MessageID: generateID(),
 					ArticleID: msg.ArticleID,
@@ -101,11 +104,11 @@ func main() {
 				},
 				ArticleTitle: msg.Title,
 				ArticleURL:   msg.URL,
-				Books:        candidates,
+				Works:        candidates,
 			}
 
-			if err := mqttClient.Publish(mqttclient.TopicBooksCandidates, out); err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish BookCandidates")
+			if err := mqttClient.Publish(mqttclient.TopicWorksCandidates, out); err != nil {
+				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish WorkCandidates")
 				return
 			}
 

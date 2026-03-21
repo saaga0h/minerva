@@ -97,21 +97,21 @@ func main() {
 		log.WithError(err).Fatal("Failed to subscribe to articles/analyzed")
 	}
 
-	// Subscribe to book candidates — upsert candidates and publish ArticleComplete
-	if err := mqttClient.Subscribe(mqttclient.TopicBooksCandidates, func(payload []byte) {
+	// Subscribe to work candidates — upsert candidates and publish ArticleComplete
+	if err := mqttClient.Subscribe(mqttclient.TopicWorksCandidates, func(payload []byte) {
 		data := make([]byte, len(payload))
 		copy(data, payload)
 		go func() {
-			var msg mqttclient.BookCandidates
+			var msg mqttclient.WorkCandidates
 			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal BookCandidates")
+				log.WithError(err).Warn("Failed to unmarshal WorkCandidates")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id": msg.ArticleID,
-				"books":      len(msg.Books),
-			}).Debug("Storing book candidates")
+				"works":      len(msg.Works),
+			}).Debug("Storing work candidates")
 
 			// Ensure article row exists
 			dbMu.Lock()
@@ -122,20 +122,24 @@ func main() {
 				return
 			}
 
-			for _, b := range msg.Books {
+			for _, w := range msg.Works {
+				author := ""
+				if len(w.Authors) > 0 {
+					author = w.Authors[0]
+				}
 				rec := database.BookRecommendation{
-					Title:       b.Title,
-					Author:      b.Author,
-					ISBN:        b.ISBN,
-					ISBN13:      b.ISBN13,
-					PublishYear: b.PublishYear,
-					Publisher:   b.Publisher,
-					CoverURL:    b.CoverURL,
-					SourceKey:   b.SourceKey,
-					Relevance:   b.Relevance,
+					Title:       w.Title,
+					Author:      author,
+					ISBN:        w.ISBN,
+					ISBN13:      w.ISBN13,
+					PublishYear: w.PublishYear,
+					Publisher:   w.Publisher,
+					CoverURL:    w.CoverURL,
+					SourceKey:   w.ReferenceID,
+					Relevance:   w.Relevance,
 				}
 				if err := db.UpsertBookCandidate(articleDBID, msg.ArticleID, rec); err != nil {
-					log.WithError(err).WithField("title", b.Title).Warn("Failed to upsert book candidate")
+					log.WithError(err).WithField("title", w.Title).Warn("Failed to upsert work candidate")
 				}
 			}
 			dbMu.Unlock()
@@ -160,20 +164,20 @@ func main() {
 		log.WithError(err).Fatal("Failed to subscribe to books/candidates")
 	}
 
-	// Subscribe to checked books — update Koha ownership on existing records
-	if err := mqttClient.Subscribe(mqttclient.TopicBooksChecked, func(payload []byte) {
+	// Subscribe to checked works — update Koha ownership on existing records
+	if err := mqttClient.Subscribe(mqttclient.TopicWorksChecked, func(payload []byte) {
 		data := make([]byte, len(payload))
 		copy(data, payload)
 		go func() {
-			var msg mqttclient.CheckedBooks
+			var msg mqttclient.CheckedWorks
 			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal CheckedBooks")
+				log.WithError(err).Warn("Failed to unmarshal CheckedWorks")
 				return
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id": msg.ArticleID,
-				"owned":      len(msg.OwnedBooks),
+				"owned":      len(msg.OwnedWorks),
 			}).Debug("Updating Koha ownership")
 
 			dbMu.Lock()
@@ -183,15 +187,15 @@ func main() {
 				log.WithError(err).WithField("url", msg.ArticleURL).Warn("Article not found for Koha update")
 				return
 			}
-			for _, b := range msg.OwnedBooks {
-				if err := db.UpdateKohaOwnershipByTitle(articleDBID, b.Title, b.KohaID); err != nil {
-					log.WithError(err).WithField("title", b.Title).Warn("Failed to update Koha ownership")
+			for _, w := range msg.OwnedWorks {
+				if err := db.UpdateKohaOwnershipByTitle(articleDBID, w.Title, w.KohaID); err != nil {
+					log.WithError(err).WithField("title", w.Title).Warn("Failed to update Koha ownership")
 				}
 			}
 			dbMu.Unlock()
 		}()
 	}); err != nil {
-		log.WithError(err).Fatal("Failed to subscribe to books/checked")
+		log.WithError(err).Fatal("Failed to subscribe to works/checked")
 	}
 
 	log.WithFields(logrus.Fields{
