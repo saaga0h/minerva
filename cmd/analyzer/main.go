@@ -113,6 +113,7 @@ func main() {
 					MessageID: generateID(),
 					ArticleID: msg.ArticleID,
 					Source:    msg.Source,
+					SourceID:  msg.SourceID,
 					Timestamp: time.Now(),
 				},
 				URL:           msg.URL,
