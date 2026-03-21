@@ -69,6 +69,7 @@ TopicArticlesComplete ←── storage (moved from notifier)
   the article was already processed once.
 - **Pattern**: Existing `RawArticle` construction at line 157
 - **Test**: `go build ./cmd/source-freshrss/...`
+- [x] DONE
 
 ### 3. Populate `SourceID` in `source-miniflux`
 - **File**: `cmd/source-miniflux/main.go`
@@ -76,6 +77,7 @@ TopicArticlesComplete ←── storage (moved from notifier)
   Re-publish loop: leave SourceID empty (same reasoning as FreshRSS).
 - **Pattern**: Existing `RawArticle` construction at line 162; `item.ID` is `int64`
 - **Test**: `go build ./cmd/source-miniflux/...`
+- [x] DONE
 
 ### 4. Populate `SourceID` in `source-linkwarden`
 - **File**: `cmd/source-linkwarden/main.go`
