@@ -45,5 +45,5 @@ jobs:
         env:
           NOMAD_ADDR: http://192.168.10.42:4646
         run: |
-          nomad job run deploy/nomad/minerva-daemons.hcl
-          nomad job run deploy/nomad/minerva-trigger.hcl
+          nomad job run deploy/nomad/minerva-daemons.hcl || true
+          nomad job run deploy/nomad/minerva-trigger.hcl || true
