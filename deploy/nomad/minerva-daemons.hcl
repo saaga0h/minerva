@@ -79,14 +79,6 @@ EOT
       service {
         name = "minerva-source-freshrss"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x source-freshrss > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -134,14 +126,6 @@ EOT
       service {
         name = "minerva-source-miniflux"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x source-miniflux > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -189,14 +173,6 @@ EOT
       service {
         name = "minerva-source-linkwarden"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x source-linkwarden > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -238,14 +214,6 @@ EOT
       service {
         name = "minerva-extractor"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x extractor > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -290,14 +258,6 @@ EOT
       service {
         name = "minerva-analyzer"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x analyzer > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -337,14 +297,6 @@ EOT
       service {
         name = "minerva-search-openlibrary"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x search-openlibrary > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -384,14 +336,6 @@ EOT
       service {
         name = "minerva-search-arxiv"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x search-arxiv > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -432,14 +376,6 @@ EOT
       service {
         name = "minerva-search-semantic-scholar"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x search-semantic-scholar > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -482,14 +418,6 @@ EOT
       service {
         name = "minerva-koha-check"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x koha-check > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -533,14 +461,6 @@ EOT
       service {
         name = "minerva-notifier"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x notifier > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -585,14 +505,6 @@ EOT
       service {
         name = "minerva-store"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x store > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
@@ -637,14 +549,6 @@ EOT
       service {
         name = "minerva-state"
         tags = ["minerva"]
-        check {
-          type     = "script"
-          name     = "process-alive"
-          command  = "/bin/sh"
-          args     = ["-c", "pgrep -x state > /dev/null"]
-          interval = "30s"
-          timeout  = "5s"
-        }
       }
     }
 
