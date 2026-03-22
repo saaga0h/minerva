@@ -25,12 +25,12 @@ jobs:
       - name: Build amd64 binaries
         run: |
           mkdir -p build/amd64
-          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make build BUILD_DIR=./build/amd64
+          GOOS=linux GOARCH=amd64 make build BUILD_DIR=./build/amd64
 
       - name: Build arm64 binaries
         run: |
           mkdir -p build/arm64
-          GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc make build BUILD_DIR=./build/arm64
+          GOOS=linux GOARCH=arm64 make build BUILD_DIR=./build/arm64
 
       - name: Publish binaries
         run: |
@@ -38,7 +38,7 @@ jobs:
           mkdir -p /var/lib/packer-builds/binaries/minerva/arm64
           cp -f build/amd64/* /var/lib/packer-builds/binaries/minerva/amd64/
           cp -f build/arm64/* /var/lib/packer-builds/binaries/minerva/arm64/
-          echo "Published amd64:"
+          echo "Published:"
           ls -lh /var/lib/packer-builds/binaries/minerva/amd64/
 
       - name: Deploy Nomad jobs

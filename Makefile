@@ -30,18 +30,18 @@ dev-clean: ## Stop and wipe Mosquitto and PostgreSQL (destroys all data)
 
 build: ## Build all primitive binaries
 	@mkdir -p $(BUILD_DIR)
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/source-freshrss         ./cmd/source-freshrss/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/source-miniflux         ./cmd/source-miniflux/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/source-linkwarden       ./cmd/source-linkwarden/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/extractor               ./cmd/extractor/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/analyzer                ./cmd/analyzer/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/search-openlibrary      ./cmd/search-openlibrary/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/search-arxiv            ./cmd/search-arxiv/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/koha-check              ./cmd/koha-check/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/notifier                ./cmd/notifier/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/store                   ./cmd/store/
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/state                   ./cmd/state/
+	go build -o $(BUILD_DIR)/source-freshrss         ./cmd/source-freshrss/
+	go build -o $(BUILD_DIR)/source-miniflux         ./cmd/source-miniflux/
+	go build -o $(BUILD_DIR)/source-linkwarden       ./cmd/source-linkwarden/
+	go build -o $(BUILD_DIR)/extractor               ./cmd/extractor/
+	go build -o $(BUILD_DIR)/analyzer                ./cmd/analyzer/
+	go build -o $(BUILD_DIR)/search-openlibrary      ./cmd/search-openlibrary/
+	go build -o $(BUILD_DIR)/search-arxiv            ./cmd/search-arxiv/
+	go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/
+	go build -o $(BUILD_DIR)/koha-check              ./cmd/koha-check/
+	go build -o $(BUILD_DIR)/notifier                ./cmd/notifier/
+	go build -o $(BUILD_DIR)/store                   ./cmd/store/
+	go build -o $(BUILD_DIR)/state                   ./cmd/state/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
 # ── Code quality ──────────────────────────────────────────────────────────────
@@ -62,51 +62,51 @@ clean: ## Remove build artifacts
 # Each target builds only the binary it needs, then runs it with .env.dev
 
 run-source-freshrss: ## Run FreshRSS source primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/source-freshrss ./cmd/source-freshrss/ && \
+	go build -o $(BUILD_DIR)/source-freshrss ./cmd/source-freshrss/ && \
 	$(BUILD_DIR)/source-freshrss -config .env.dev
 
 run-source-miniflux: ## Run Miniflux source primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/source-miniflux ./cmd/source-miniflux/ && \
+	go build -o $(BUILD_DIR)/source-miniflux ./cmd/source-miniflux/ && \
 	$(BUILD_DIR)/source-miniflux -config .env.dev
 
 run-source-linkwarden: ## Run Linkwarden source primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/source-linkwarden ./cmd/source-linkwarden/ && \
+	go build -o $(BUILD_DIR)/source-linkwarden ./cmd/source-linkwarden/ && \
 	$(BUILD_DIR)/source-linkwarden -config .env.dev
 
 run-extractor: ## Run extractor primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/extractor ./cmd/extractor/ && \
+	go build -o $(BUILD_DIR)/extractor ./cmd/extractor/ && \
 	$(BUILD_DIR)/extractor -config .env.dev
 
 run-analyzer: ## Run analyzer primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/analyzer ./cmd/analyzer/ && \
+	go build -o $(BUILD_DIR)/analyzer ./cmd/analyzer/ && \
 	$(BUILD_DIR)/analyzer -config .env.dev
 
 run-search-openlibrary: ## Run OpenLibrary search primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/search-openlibrary ./cmd/search-openlibrary/ && \
+	go build -o $(BUILD_DIR)/search-openlibrary ./cmd/search-openlibrary/ && \
 	$(BUILD_DIR)/search-openlibrary -config .env.dev
 
 run-search-arxiv: ## Run arXiv search primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/search-arxiv ./cmd/search-arxiv/ && \
+	go build -o $(BUILD_DIR)/search-arxiv ./cmd/search-arxiv/ && \
 	$(BUILD_DIR)/search-arxiv -config .env.dev
 
 run-search-semantic-scholar: ## Run Semantic Scholar search primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/ && \
+	go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/ && \
 	$(BUILD_DIR)/search-semantic-scholar -config .env.dev
 
 run-koha-check: ## Run Koha ownership check primitive
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/koha-check ./cmd/koha-check/ && \
+	go build -o $(BUILD_DIR)/koha-check ./cmd/koha-check/ && \
 	$(BUILD_DIR)/koha-check -config .env.dev
 
 run-notifier: ## Run notifier primitive (stub — awaiting consolidator)
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/notifier ./cmd/notifier/ && \
+	go build -o $(BUILD_DIR)/notifier ./cmd/notifier/ && \
 	$(BUILD_DIR)/notifier -config .env.dev
 
 run-store: ## Run store primitive (Postgres knowledge base observer)
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/store ./cmd/store/ && \
+	go build -o $(BUILD_DIR)/store ./cmd/store/ && \
 	$(BUILD_DIR)/store -config .env.dev
 
 run-state: ## Run state primitive (pipeline crash recovery)
-	CGO_ENABLED=1 go build -o $(BUILD_DIR)/state ./cmd/state/ && \
+	go build -o $(BUILD_DIR)/state ./cmd/state/ && \
 	$(BUILD_DIR)/state -config .env.dev
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
