@@ -101,8 +101,8 @@ run: build ## Build and show instructions for running primitives
 	@echo "Then trigger the pipeline: make trigger"
 
 # Run in development mode
-dev: build-dev ## Build all primitives in development mode
-	@echo "Primitives built. Run each with: -config .env.dev"
+dev: mosquitto pg build-dev ## Start infrastructure and build all primitives for development
+	@echo "Mosquitto and PostgreSQL started. Primitives built. Run each with: -config .env.dev"
 
 # Run with dry-run flag (kept for compatibility, now just shows help)
 dry-run: build-dev ## Build primitives (dry-run mode removed — use trigger for testing)
@@ -165,8 +165,6 @@ build-primitives: ## Build all primitive binaries (native, for local dev)
 	go build -o $(BUILD_DIR)/search-openlibrary     ./cmd/search-openlibrary/
 	go build -o $(BUILD_DIR)/search-arxiv            ./cmd/search-arxiv/
 	go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/
-<<<<<<< HEAD
-	go build -o $(BUILD_DIR)/koha-check         ./cmd/koha-check/
 	go build -o $(BUILD_DIR)/storage             ./cmd/storage/
 	go build -o $(BUILD_DIR)/koha-check          ./cmd/koha-check/
 	go build -o $(BUILD_DIR)/notifier            ./cmd/notifier/
