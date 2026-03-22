@@ -38,6 +38,8 @@ func main() {
 	logger.SetLevel(cfg.Log.Level)
 
 	// Knowledge base — PostgreSQL. Fatal if unavailable: store has no purpose without it.
+	log.WithField("dsn_env", os.Getenv("STORE_DSN")).Info("DSN from environment")
+	log.WithField("dsn_cfg", cfg.Store.DSN).Info("DSN from config")
 	ctx := context.Background()
 	db, err := store.New(ctx, cfg.Store.DSN)
 	if err != nil {
