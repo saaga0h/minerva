@@ -42,6 +42,7 @@ build: ## Build all primitive binaries
 	go build -o $(BUILD_DIR)/notifier                ./cmd/notifier/
 	go build -o $(BUILD_DIR)/store                   ./cmd/store/
 	go build -o $(BUILD_DIR)/state                   ./cmd/state/
+	go build -o $(BUILD_DIR)/trigger                 ./cmd/trigger/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
 # ── Code quality ──────────────────────────────────────────────────────────────
