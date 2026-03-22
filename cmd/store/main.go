@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/saaga0h/minerva/internal/config"
@@ -191,7 +192,8 @@ func main() {
 	}
 
 	// ── minerva/works/checked ───────────────────────────────────────────────
-	// Update owned_in_koha for books confirmed in the library catalog.
+	// Final pipeline stage. Mark the article complete and publish ArticleComplete
+	// so source primitives skip it on future runs and the state primitive cleans up.
 	if err := mqttClient.Subscribe(mqttclient.TopicWorksChecked, func(payload []byte) {
 		data := make([]byte, len(payload))
 		copy(data, payload)
@@ -202,14 +204,24 @@ func main() {
 				return
 			}
 
-			// We don't have the canonical_id for owned works directly — they come back as
-			// OwnedWork (title, author, koha_id). We mark by joining on the article's
-			// linked works. For now, log the count; MarkOwnedInKoha is available when
-			// the work's canonical_id is known from context.
+			if err := db.MarkCompleteByArticleID(ctx, msg.ArticleID); err != nil {
+				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("store: failed to mark article complete")
+				return
+			}
+
+			complete := mqttclient.ArticleComplete{
+				Envelope:    mqttclient.Envelope{ArticleID: msg.ArticleID},
+				CompletedAt: time.Now(),
+			}
+			if err := mqttClient.Publish(mqttclient.TopicArticlesComplete, complete); err != nil {
+				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("store: failed to publish ArticleComplete")
+				return
+			}
+
 			log.WithFields(logrus.Fields{
 				"article_id":  msg.ArticleID,
 				"owned_count": len(msg.OwnedWorks),
-			}).Debug("store: received checked works (owned_in_koha updates deferred to notifier)")
+			}).Debug("store: article complete")
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to works/checked")
@@ -218,7 +230,7 @@ func main() {
 	log.WithFields(logrus.Fields{
 		"broker":    brokerURL,
 		"client_id": clientID,
-	}).Info("Store primitive ready — observing pipeline (does not publish)")
+	}).Info("Store primitive ready — observing pipeline")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

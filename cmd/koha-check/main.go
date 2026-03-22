@@ -85,13 +85,14 @@ func main() {
 					isbn = work.ISBN
 				}
 
-				// Koha CheckOwnership takes a single author string — use first author if available
-				author := ""
-				if len(work.Authors) > 0 {
-					author = work.Authors[0]
+				// Skip Koha lookup for books without an ISBN — title-only searches
+				// are unreliable and Koha won't have papers or ISBNless entries anyway.
+				if isbn == "" {
+					newWorks = append(newWorks, work)
+					continue
 				}
 
-				owned, kohaRecord, err := koha.CheckOwnership(isbn, work.Title, author)
+				owned, kohaRecord, err := koha.CheckOwnership(isbn)
 				if err != nil {
 					log.WithError(err).WithField("title", work.Title).Warn("Koha check failed — treating as new work")
 					newWorks = append(newWorks, work)

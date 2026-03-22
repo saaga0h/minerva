@@ -36,29 +36,16 @@ func NewKoha(cfg config.KohaConfig) *Koha {
 }
 
 // CheckOwnership checks if you own a book by ISBN or title/author
-func (k *Koha) CheckOwnership(isbn, title, author string) (bool, *KohaRecord, error) {
-	k.logger.WithFields(logrus.Fields{
-		"isbn":   isbn,
-		"title":  title,
-		"author": author,
-	}).Debug("Checking book ownership in Koha")
+func (k *Koha) CheckOwnership(isbn string) (bool, *KohaRecord, error) {
+	k.logger.WithField("isbn", isbn).Debug("Checking book ownership in Koha")
 
-	// Try ISBN first (most reliable)
-	if isbn != "" {
-		records, err := k.searchByField("isbn", isbn)
-		if err == nil && len(records) > 0 {
-			k.logger.WithField("title", records[0].Title).Info("Found book in catalog by ISBN")
-			return true, &records[0], nil
-		}
+	records, err := k.searchByField("isbn", isbn)
+	if err != nil {
+		return false, nil, err
 	}
-
-	// Fallback to title search
-	if title != "" {
-		records, err := k.searchByTitle(title)
-		if err == nil && len(records) > 0 {
-			k.logger.WithField("title", records[0].Title).Info("Found book in catalog by title")
-			return true, &records[0], nil
-		}
+	if len(records) > 0 {
+		k.logger.WithField("title", records[0].Title).Info("Found book in catalog by ISBN")
+		return true, &records[0], nil
 	}
 
 	k.logger.Debug("Book not found in catalog")

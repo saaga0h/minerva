@@ -54,20 +54,19 @@ func main() {
 	s2 := services.NewSemanticScholar(cfg.SemanticScholar)
 	s2.SetLogger(log)
 
-	// Subscribe to analyzed articles — search for paper recommendations
-	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
-		data := make([]byte, len(payload))
-		copy(data, payload)
-		go func() {
-			var msg mqttclient.AnalyzedArticle
-			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal AnalyzedArticle")
-				return
-			}
+	// Single-worker queue — Semantic Scholar free tier allows ~1 req/s; a worker pool
+	// with concurrency > 1 would just queue up 429s. The MQTT handler enqueues without
+	// blocking; the worker drains sequentially (throttle() in the service enforces the gap).
+	type workItem struct{ msg mqttclient.AnalyzedArticle }
+	queue := make(chan workItem, 256)
+
+	go func() {
+		for item := range queue {
+			msg := item.msg
 
 			if len(msg.Keywords) == 0 {
 				log.WithField("article_id", msg.ArticleID).Warn("No keywords — skipping Semantic Scholar search")
-				return
+				continue
 			}
 
 			log.WithFields(logrus.Fields{
@@ -78,12 +77,11 @@ func main() {
 			papers, err := s2.SearchPapers(msg.Keywords, msg.Insights)
 			if err != nil {
 				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("Semantic Scholar search failed — skipping")
-				return
+				continue
 			}
 
 			candidates := make([]mqttclient.WorkCandidate, 0, len(papers))
 			for _, p := range papers {
-				// Prefer arxiv: prefix if the paper has an arXiv ID, otherwise use s2:
 				referenceID := "s2:" + p.PaperID
 				if p.ArXivID != "" {
 					referenceID = "arxiv:" + p.ArXivID
@@ -115,13 +113,27 @@ func main() {
 
 			if err := mqttClient.Publish(mqttclient.TopicWorksCandidates, out); err != nil {
 				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish WorkCandidates")
-				return
+				continue
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id":   msg.ArticleID,
 				"papers_found": len(candidates),
 			}).Debug("Published Semantic Scholar paper candidates")
+		}
+	}()
+
+	// Subscribe to analyzed articles — enqueue for sequential processing.
+	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
+		data := make([]byte, len(payload))
+		copy(data, payload)
+		go func() {
+			var msg mqttclient.AnalyzedArticle
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.WithError(err).Warn("Failed to unmarshal AnalyzedArticle")
+				return
+			}
+			queue <- workItem{msg}
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to articles/analyzed")
