@@ -22,9 +22,9 @@ Each stage of the pipeline is an independent long-running binary. They communica
             source-miniflux  ─┤→ extractor → analyzer → search-openlibrary ─┐
             source-linkwarden ┘                        ├─→ search-arxiv ────┤→ koha-check ─┐
                                                        └─→ search-semantic-scholar ↑      │
-                                                                              (storage) ←─┘
-                                                                                 ↓
-                                                                              notifier (digest)
+                                                                        (state) ← (storage) ←─┘
+                                                                           ↓
+                                                                        notifier (digest)
 ```
 
 ### Topic Chain
@@ -32,11 +32,11 @@ Each stage of the pipeline is an independent long-running binary. They communica
 | Topic | Publisher | Subscriber(s) |
 |-------|-----------|---------------|
 | `minerva/pipeline/trigger` | external / `make trigger` | source-freshrss, source-miniflux, source-linkwarden |
-| `minerva/articles/raw` | source primitives | extractor |
-| `minerva/articles/extracted` | extractor | analyzer |
-| `minerva/articles/analyzed` | analyzer | storage, search-openlibrary, search-arxiv, search-semantic-scholar |
-| `minerva/books/candidates` | search-openlibrary, search-arxiv, search-semantic-scholar | storage |
-| `minerva/books/checked` | koha-check | storage |
+| `minerva/articles/raw` | source primitives | extractor, state |
+| `minerva/articles/extracted` | extractor | analyzer, state |
+| `minerva/articles/analyzed` | analyzer | storage, search-openlibrary, search-arxiv, search-semantic-scholar, state |
+| `minerva/books/candidates` | search-openlibrary, search-arxiv, search-semantic-scholar | storage, state |
+| `minerva/books/checked` | koha-check | storage, state |
 | `minerva/articles/complete` | storage | source-freshrss, source-miniflux, source-linkwarden |
 | `minerva/pipeline/digest` | external / `make digest` | notifier |
 
@@ -77,9 +77,10 @@ minerva/
 │   ├── analyzer/                # Ollama LLM analysis
 │   ├── search-openlibrary/      # OpenLibrary book search
 │   ├── search-arxiv/            # arXiv paper search
-│   ├── search-semantic-scholar/ # Semantic Scholar paper search
+│   ├── search-semantic-Scholar/ # Semantic Scholar paper search
 │   ├── koha-check/              # Library catalog validation
 │   ├── storage/                 # Recommendations DB writes + article completion
+│   ├── state/                   # Pipeline crash recovery + message replay
 │   └── notifier/                # Digest notifications (Ntfy)
 ├── internal/
 │   ├── config/           # Environment-based configuration
@@ -149,6 +150,7 @@ make run-search-arxiv
 make run-search-semantic-scholar
 make run-koha-check
 make run-storage
+make run-state
 make run-notifier
 
 # Trigger the pipeline

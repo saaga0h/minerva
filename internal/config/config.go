@@ -10,7 +10,6 @@ import (
 type Config struct {
 	App             AppConfig             `json:"app"`
 	Log             LogConfig             `json:"log"`
-	Database        DatabaseConfig        `json:"database"`
 	Store           StoreConfig           `json:"store"`
 	FreshRSS        FreshRSSConfig        `json:"fresh_rss"`
 	Linkwarden      LinkwardenConfig      `json:"linkwarden"`
@@ -34,10 +33,6 @@ type AppConfig struct {
 type LogConfig struct {
 	Level  string `json:"level" env:"LOG_LEVEL" default:"info"`
 	Format string `json:"format" env:"LOG_FORMAT" default:"json"`
-}
-
-type DatabaseConfig struct {
-	Path string `json:"path" env:"DATABASE_PATH" default:"./data/minerva.db"`
 }
 
 type StoreConfig struct {
@@ -126,9 +121,6 @@ func Load(configPath string) (*Config, error) {
 		Log: LogConfig{
 			Level:  getEnv("LOG_LEVEL", "info"),
 			Format: getEnv("LOG_FORMAT", "json"),
-		},
-		Database: DatabaseConfig{
-			Path: getEnv("DATABASE_PATH", "./data/minerva.db"),
 		},
 		Store: StoreConfig{
 			DSN:     getEnv("STORE_DSN", "postgres://minerva:minerva@localhost:5432/minerva"),

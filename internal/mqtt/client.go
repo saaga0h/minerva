@@ -106,6 +106,22 @@ func (c *Client) Subscribe(topic string, handler func(payload []byte)) error {
 	return nil
 }
 
+// PublishRaw publishes a pre-serialized JSON payload to a topic at QoS 1.
+func (c *Client) PublishRaw(topic string, payload []byte) error {
+	token := c.client.Publish(topic, qos, false, payload)
+	token.Wait()
+	if err := token.Error(); err != nil {
+		return fmt.Errorf("failed to publish to %s: %w", topic, err)
+	}
+
+	c.logger.WithFields(logrus.Fields{
+		"topic": topic,
+		"bytes": len(payload),
+	}).Debug("Published raw message")
+
+	return nil
+}
+
 // Disconnect cleanly closes the MQTT connection.
 func (c *Client) Disconnect() {
 	c.client.Disconnect(250)

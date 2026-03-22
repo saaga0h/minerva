@@ -1,37 +1,12 @@
 services:
-  minerva:
-    build: .
-    container_name: minerva
-    environment:
-      - APP_ENV=production
-      - LOG_LEVEL=info
-      - LOG_FORMAT=json
-      - DATABASE_PATH=/data/minerva.db
-    env_file:
-      - .env
-    volumes:
-      - minerva_data:/data
-      - ./logs:/var/log/minerva
-    restart: "no"  # Batch job - don't restart automatically
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - minerva_network
-
   mosquitto:
     image: eclipse-mosquitto:2
     container_name: minerva_mosquitto
     ports:
       - "1883:1883"
-      - "9001:9001"
     volumes:
       - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf
       - mosquitto_data:/mosquitto/data
-    networks:
-      - minerva_network
     restart: unless-stopped
 
   postgres:
@@ -45,8 +20,6 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    networks:
-      - minerva_network
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U minerva"]
@@ -54,28 +27,8 @@ services:
       timeout: 5s
       retries: 5
 
-  # Optional: Add development services
-  ollama:
-    image: ollama/ollama:latest
-    container_name: minerva_ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - minerva_network
-    profiles: ["dev"]
-
 volumes:
-  minerva_data:
-    driver: local
-  ollama_data:
-    driver: local
   mosquitto_data:
     driver: local
   postgres_data:
     driver: local
-
-networks:
-  minerva_network:
-    driver: bridge
