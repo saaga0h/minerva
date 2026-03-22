@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/saaga0h/minerva/internal/config"
 	mqttclient "github.com/saaga0h/minerva/internal/mqtt"
 	"github.com/saaga0h/minerva/internal/services"
 	"github.com/saaga0h/minerva/internal/store"
@@ -32,23 +33,15 @@ func main() {
 		godotenv.Load()
 	}
 
-	logLevel := getEnv("LOG_LEVEL", "info")
-	logger.SetLevel(logLevel)
-
-	// Miniflux config from environment
-	minifluxCfg := services.MinifluxConfig{
-		BaseURL: getEnv("MINIFLUX_BASE_URL", ""),
-		APIKey:  getEnv("MINIFLUX_API_KEY", ""),
-		Timeout: 30,
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		log.WithError(err).Fatal("Failed to load configuration")
 	}
-	if minifluxCfg.BaseURL == "" {
-		log.Fatal("MINIFLUX_BASE_URL is required")
-	}
+	logger.SetLevel(cfg.Log.Level)
 
 	// State DB
-	storeDSN := getEnv("STORE_DSN", "postgres://minerva:minerva@localhost:5432/minerva")
 	ctx := context.Background()
-	stateDB, err := store.New(ctx, storeDSN)
+	stateDB, err := store.New(ctx, cfg.Store.DSN)
 	if err != nil {
 		log.WithError(err).Fatal("Failed to connect to PostgreSQL")
 	}
@@ -70,6 +63,14 @@ func main() {
 	mqttClient.SetLogger(log)
 
 	// Miniflux service
+	minifluxCfg := services.MinifluxConfig{
+		BaseURL: getEnv("MINIFLUX_BASE_URL", ""),
+		APIKey:  getEnv("MINIFLUX_API_KEY", ""),
+		Timeout: 30,
+	}
+	if minifluxCfg.BaseURL == "" {
+		log.Fatal("MINIFLUX_BASE_URL is required")
+	}
 	miniflux := services.NewMiniflux(minifluxCfg)
 	miniflux.SetLogger(log)
 
