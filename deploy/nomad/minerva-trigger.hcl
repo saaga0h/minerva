@@ -36,7 +36,13 @@ job "minerva-trigger" {
 
       config {
         command = "/bin/sh"
-        args    = ["-c", "mosquitto_pub -h $MQTT_HOST -p $MQTT_PORT -t minerva/pipeline/trigger -m '{}'"]
+        args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/trigger && exec ${NOMAD_TASK_DIR}/trigger"]
+      }
+
+      artifact {
+        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/trigger"
+        destination = "local/trigger"
+        mode        = "file"
       }
 
       template {
@@ -44,8 +50,9 @@ job "minerva-trigger" {
         env         = true
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
-MQTT_HOST={{ .Data.data.MQTT_HOST }}
-MQTT_PORT={{ .Data.data.MQTT_PORT }}
+MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 {{ end }}
 EOT
       }
