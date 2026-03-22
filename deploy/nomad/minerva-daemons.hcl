@@ -56,7 +56,7 @@ job "minerva-daemons" {
 DB_HOST={{ .Data.data.DB_HOST }}
 DB_PORT={{ .Data.data.DB_PORT }}
 DB_USER={{ .Data.data.DB_USER }}
-DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
@@ -109,7 +109,7 @@ EOT
 DB_HOST={{ .Data.data.DB_HOST }}
 DB_PORT={{ .Data.data.DB_PORT }}
 DB_USER={{ .Data.data.DB_USER }}
-DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
@@ -162,7 +162,7 @@ EOT
 DB_HOST={{ .Data.data.DB_HOST }}
 DB_PORT={{ .Data.data.DB_PORT }}
 DB_USER={{ .Data.data.DB_USER }}
-DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
@@ -545,7 +545,7 @@ EOT
 DB_HOST={{ .Data.data.DB_HOST }}
 DB_PORT={{ .Data.data.DB_PORT }}
 DB_USER={{ .Data.data.DB_USER }}
-DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
@@ -595,7 +595,7 @@ EOT
 DB_HOST={{ .Data.data.DB_HOST }}
 DB_PORT={{ .Data.data.DB_PORT }}
 DB_USER={{ .Data.data.DB_USER }}
-DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_PASSWORD='{{ .Data.data.DB_PASSWORD }}'
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
