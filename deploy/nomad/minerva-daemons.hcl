@@ -60,6 +60,8 @@ DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 FRESHRSS_BASE_URL={{ .Data.data.FRESHRSS_BASE_URL }}
 FRESHRSS_API_KEY={{ .Data.data.FRESHRSS_API_KEY }}
 FRESHRSS_TIMEOUT={{ .Data.data.FRESHRSS_TIMEOUT }}
@@ -113,6 +115,8 @@ DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 MINIFLUX_BASE_URL={{ .Data.data.MINIFLUX_BASE_URL }}
 MINIFLUX_API_KEY={{ .Data.data.MINIFLUX_API_KEY }}
 MINIFLUX_TIMEOUT={{ .Data.data.MINIFLUX_TIMEOUT }}
@@ -166,6 +170,8 @@ DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 LINKWARDEN_BASE_URL={{ .Data.data.LINKWARDEN_BASE_URL }}
 LINKWARDEN_API_KEY={{ .Data.data.LINKWARDEN_API_KEY }}
 LINKWARDEN_TIMEOUT={{ .Data.data.LINKWARDEN_TIMEOUT }}
@@ -213,6 +219,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 EXTRACTOR_USER_AGENT={{ .Data.data.EXTRACTOR_USER_AGENT }}
 EXTRACTOR_TIMEOUT={{ .Data.data.EXTRACTOR_TIMEOUT }}
 EXTRACTOR_MAX_SIZE={{ .Data.data.EXTRACTOR_MAX_SIZE }}
@@ -260,6 +268,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 OLLAMA_BASE_URL={{ .Data.data.OLLAMA_BASE_URL }}
 OLLAMA_MODEL={{ .Data.data.OLLAMA_MODEL }}
 OLLAMA_TIMEOUT={{ .Data.data.OLLAMA_TIMEOUT }}
@@ -310,6 +320,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 OPENLIBRARY_TIMEOUT={{ .Data.data.OPENLIBRARY_TIMEOUT }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
 {{ end }}
@@ -355,6 +367,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 ARXIV_TIMEOUT={{ .Data.data.ARXIV_TIMEOUT }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
 {{ end }}
@@ -400,6 +414,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 SEMANTIC_SCHOLAR_TIMEOUT={{ .Data.data.SEMANTIC_SCHOLAR_TIMEOUT }}
 SEMANTIC_SCHOLAR_API_KEY={{ .Data.data.SEMANTIC_SCHOLAR_API_KEY }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
@@ -446,6 +462,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 KOHA_BASE_URL={{ .Data.data.KOHA_BASE_URL }}
 KOHA_USERNAME={{ .Data.data.KOHA_USERNAME }}
 KOHA_PASSWORD={{ .Data.data.KOHA_PASSWORD }}
@@ -494,6 +512,8 @@ EOT
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 NTFY_BASE_URL={{ .Data.data.NTFY_BASE_URL }}
 NTFY_TOPIC={{ .Data.data.NTFY_TOPIC }}
 NTFY_TOKEN={{ .Data.data.NTFY_TOKEN }}
@@ -549,6 +569,8 @@ DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
 {{ end }}
 EOT
@@ -599,6 +621,8 @@ DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
 DB_NAME={{ .Data.data.DB_NAME }}
 DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
 {{ end }}
 EOT

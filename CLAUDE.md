@@ -1,6 +1,6 @@
 # Minerva
 
-Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, search-openlibrary, search-arxiv, search-semantic-scholar, koha-check, notifier, store. Each is a long-running binary communicating through Mosquitto.
+Transforms RSS starred articles and bookmarks into book recommendations via a pipeline of independent MQTT primitives: source-freshrss, source-miniflux, source-linkwarden, extractor, analyzer, search-openlibrary, search-arxiv, search-semantic-scholar, koha-check, notifier, store, state. Each is a long-running binary communicating through Mosquitto.
 
 ## Build & Test
 
@@ -23,6 +23,7 @@ make run-storage
 make run-koha-check
 make run-notifier
 make run-store          # optional — populates knowledge base (requires PostgreSQL, as do source primitives)
+make run-state          # optional — pipeline crash recovery (requires PostgreSQL)
 
 make trigger            # fire pipeline (requires mosquitto_pub in PATH)
 make digest             # send digest notification (requires mosquitto_pub in PATH)
@@ -32,7 +33,7 @@ make fmt && make lint
 
 No tests currently exist.
 
-CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency in the notifier's recommendations DB).
+CGo is not required: go-sqlite3 was removed when the notifier was rewritten as a stub. All primitives build with plain `go build`.
 
 ## Constraints
 
@@ -43,6 +44,8 @@ CGo is required: `CGO_ENABLED=1` (go-sqlite3 dependency in the notifier's recomm
 **Ollama must be reachable** at `OLLAMA_BASE_URL` (default `http://localhost:11434`) before the analyzer starts.
 
 **`cmd/store` is a pure observer** — it does not publish to any pipeline topic. The pipeline runs normally without it. Start it before the trigger if knowledge base population is wanted.
+
+**`cmd/state` is a pure observer during normal operation** — it does not publish to any pipeline topic until a trigger fires with incomplete articles. On trigger it replays the most advanced stored stage per article so the pipeline resumes from where it crashed. Uses `internal/statestore/` (Postgres-backed, `pipeline_state` table) — separate from `internal/store/`. Start it before source primitives for best coverage; if it misses a stage message, that stage cannot be replayed.
 
 **PostgreSQL must be running** before source primitives (freshrss, miniflux, linkwarden) and `cmd/store` start. `make pg` uses docker compose. `pgxpool` (pgx/v5) is concurrency-safe — no `sync.Mutex` needed around store calls (unlike the SQLite notifier). Source primitives will fatal on startup if `STORE_DSN` is unreachable.
 

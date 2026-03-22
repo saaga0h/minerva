@@ -70,6 +70,8 @@ func main() {
 	mqttClient, err := mqttclient.NewClient(mqttclient.ClientConfig{
 		BrokerURL: brokerURL,
 		ClientID:  clientID,
+		Username:  getEnv("MQTT_USER", ""),
+		Password:  getEnv("MQTT_PASSWORD", ""),
 	})
 	if err != nil {
 		log.WithError(err).Fatal("Failed to connect to MQTT broker")
