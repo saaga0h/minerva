@@ -1,0 +1,49 @@
+# Build and publish all Minerva binaries on every push to main.
+# Binaries are copied directly to the nginx artifact server on the packer host.
+# Served at: http://192.168.10.50:8080/api/binaries/minerva/<arch>/<binary>
+#
+# Prerequisites:
+#   - Runner "packer" is the same host as the nginx artifact server
+#   - /var/lib/packer-builds/binaries/minerva/{amd64,arm64}/ directories exist
+#     and are writable by the act_runner user
+
+name: build
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: packer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+
+      - name: Build amd64 binaries
+        run: |
+          mkdir -p build/amd64
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=1 make build BUILD_DIR=./build/amd64
+
+      - name: Build arm64 binaries
+        run: |
+          mkdir -p build/arm64
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=1 CC=aarch64-linux-gnu-gcc make build BUILD_DIR=./build/arm64
+
+      - name: Publish binaries
+        run: |
+          mkdir -p /var/lib/packer-builds/binaries/minerva/amd64
+          mkdir -p /var/lib/packer-builds/binaries/minerva/arm64
+          cp -f build/amd64/* /var/lib/packer-builds/binaries/minerva/amd64/
+          cp -f build/arm64/* /var/lib/packer-builds/binaries/minerva/arm64/
+          echo "Published amd64:"
+          ls -lh /var/lib/packer-builds/binaries/minerva/amd64/
+
+      - name: Deploy Nomad jobs
+        env:
+          NOMAD_ADDR: http://192.168.10.42:4646
+        run: |
+          nomad job run deploy/nomad/minerva-daemons.hcl
+          nomad job run deploy/nomad/minerva-trigger.hcl
