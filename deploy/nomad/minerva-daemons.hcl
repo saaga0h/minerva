@@ -53,7 +53,12 @@ job "minerva-daemons" {
         env         = true
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
-STORE_DSN=postgres://{{ .Data.data.DB_USER }}:{{ .Data.data.DB_PASSWORD }}@{{ .Data.data.DB_HOST }}:{{ .Data.data.DB_PORT }}/{{ .Data.data.DB_NAME }}?sslmode={{ .Data.data.DB_SSLMODE }}
+DB_HOST={{ .Data.data.DB_HOST }}
+DB_PORT={{ .Data.data.DB_PORT }}
+DB_USER={{ .Data.data.DB_USER }}
+DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_NAME={{ .Data.data.DB_NAME }}
+DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
 FRESHRSS_BASE_URL={{ .Data.data.FRESHRSS_BASE_URL }}
 FRESHRSS_API_KEY={{ .Data.data.FRESHRSS_API_KEY }}
@@ -101,7 +106,12 @@ EOT
         env         = true
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
-STORE_DSN=postgres://{{ .Data.data.DB_USER }}:{{ .Data.data.DB_PASSWORD }}@{{ .Data.data.DB_HOST }}:{{ .Data.data.DB_PORT }}/{{ .Data.data.DB_NAME }}?sslmode={{ .Data.data.DB_SSLMODE }}
+DB_HOST={{ .Data.data.DB_HOST }}
+DB_PORT={{ .Data.data.DB_PORT }}
+DB_USER={{ .Data.data.DB_USER }}
+DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_NAME={{ .Data.data.DB_NAME }}
+DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
 MINIFLUX_BASE_URL={{ .Data.data.MINIFLUX_BASE_URL }}
 MINIFLUX_API_KEY={{ .Data.data.MINIFLUX_API_KEY }}
@@ -149,7 +159,12 @@ EOT
         env         = true
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
-STORE_DSN=postgres://{{ .Data.data.DB_USER }}:{{ .Data.data.DB_PASSWORD }}@{{ .Data.data.DB_HOST }}:{{ .Data.data.DB_PORT }}/{{ .Data.data.DB_NAME }}?sslmode={{ .Data.data.DB_SSLMODE }}
+DB_HOST={{ .Data.data.DB_HOST }}
+DB_PORT={{ .Data.data.DB_PORT }}
+DB_USER={{ .Data.data.DB_USER }}
+DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_NAME={{ .Data.data.DB_NAME }}
+DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
 LINKWARDEN_BASE_URL={{ .Data.data.LINKWARDEN_BASE_URL }}
 LINKWARDEN_API_KEY={{ .Data.data.LINKWARDEN_API_KEY }}
@@ -527,7 +542,12 @@ EOT
         env         = true
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
-STORE_DSN=postgres://{{ .Data.data.DB_USER }}:{{ .Data.data.DB_PASSWORD }}@{{ .Data.data.DB_HOST }}:{{ .Data.data.DB_PORT }}/{{ .Data.data.DB_NAME }}?sslmode={{ .Data.data.DB_SSLMODE }}
+DB_HOST={{ .Data.data.DB_HOST }}
+DB_PORT={{ .Data.data.DB_PORT }}
+DB_USER={{ .Data.data.DB_USER }}
+DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_NAME={{ .Data.data.DB_NAME }}
+DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
 {{ end }}
@@ -572,7 +592,12 @@ EOT
         env         = true
         data        = <<EOT
 {{ with secret "secret/data/nomad/minerva" }}
-STORE_DSN=postgres://{{ .Data.data.DB_USER }}:{{ .Data.data.DB_PASSWORD }}@{{ .Data.data.DB_HOST }}:{{ .Data.data.DB_PORT }}/{{ .Data.data.DB_NAME }}?sslmode={{ .Data.data.DB_SSLMODE }}
+DB_HOST={{ .Data.data.DB_HOST }}
+DB_PORT={{ .Data.data.DB_PORT }}
+DB_USER={{ .Data.data.DB_USER }}
+DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_NAME={{ .Data.data.DB_NAME }}
+DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
 MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
 LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
 {{ end }}

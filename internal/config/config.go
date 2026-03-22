@@ -36,8 +36,17 @@ type LogConfig struct {
 }
 
 type StoreConfig struct {
-	DSN     string `json:"dsn" env:"STORE_DSN"`
-	Enabled bool   `json:"enabled" env:"STORE_ENABLED"`
+	// DSN can be set directly via STORE_DSN, or assembled from individual DB_* vars.
+	// Individual vars are preferred in production (passwords may contain special chars
+	// that break DSN string parsing).
+	DSN      string `json:"dsn"`
+	Host     string `json:"host"`
+	Port     string `json:"port"`
+	User     string `json:"user"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
+	SSLMode  string `json:"ssl_mode"`
+	Enabled  bool   `json:"enabled"`
 }
 
 type FreshRSSConfig struct {
@@ -122,10 +131,7 @@ func Load(configPath string) (*Config, error) {
 			Level:  getEnv("LOG_LEVEL", "info"),
 			Format: getEnv("LOG_FORMAT", "json"),
 		},
-		Store: StoreConfig{
-			DSN:     getEnv("STORE_DSN", "postgres://minerva:minerva@localhost:5432/minerva"),
-			Enabled: getEnv("STORE_ENABLED", "false") == "true",
-		},
+		Store: buildStoreConfig(),
 		FreshRSS: FreshRSSConfig{
 			BaseURL: getEnv("FRESHRSS_BASE_URL", ""),
 			APIKey:  getEnv("FRESHRSS_API_KEY", ""),
@@ -178,6 +184,36 @@ func Load(configPath string) (*Config, error) {
 	}
 
 	return config, nil
+}
+
+func buildStoreConfig() StoreConfig {
+	// If individual DB_* vars are set, use them to build the DSN safely.
+	// This avoids special characters in passwords breaking DSN string parsing.
+	host := getEnv("DB_HOST", "")
+	port := getEnv("DB_PORT", "5432")
+	user := getEnv("DB_USER", "")
+	password := getEnv("DB_PASSWORD", "")
+	name := getEnv("DB_NAME", "")
+	sslmode := getEnv("DB_SSLMODE", "disable")
+
+	dsn := getEnv("STORE_DSN", "")
+	if dsn == "" && host != "" && user != "" && name != "" {
+		dsn = fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+			user, password, host, port, name, sslmode)
+	}
+	// No DSN configured — pgx will use libpq env vars (PGHOST, PGUSER, etc.)
+	// or fail at connection time with a clear error.
+
+	return StoreConfig{
+		DSN:      dsn,
+		Host:     host,
+		Port:     port,
+		User:     user,
+		Password: password,
+		Name:     name,
+		SSLMode:  sslmode,
+		Enabled:  getEnv("STORE_ENABLED", "false") == "true",
+	}
 }
 
 func getEnv(key, defaultValue string) string {
