@@ -2,6 +2,23 @@
 /build/
 /dist/
 
+# Binaries built to repo root (go build ./cmd/...)
+/source-freshrss
+/source-miniflux
+/source-linkwarden
+/extractor
+/analyzer
+/search-openlibrary
+/search-arxiv
+/search-semantic-scholar
+/search-openalex
+/koha-check
+/notifier
+/store
+/state
+/brief
+/trigger
+
 # Go specific
 *.exe
 *.exe~

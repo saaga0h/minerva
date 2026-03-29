@@ -14,10 +14,12 @@ type Config struct {
 	FreshRSS        FreshRSSConfig        `json:"fresh_rss"`
 	Linkwarden      LinkwardenConfig      `json:"linkwarden"`
 	Ollama          OllamaConfig          `json:"ollama"`
+	Brief           BriefConfig           `json:"brief"`
 	SearXNG         SearXNGConfig         `json:"searxng"`
 	OpenLibrary     OpenLibraryConfig     `json:"openlibrary"`
 	ArXiv           ArXivConfig           `json:"arxiv"`
 	SemanticScholar SemanticScholarConfig `json:"semantic_scholar"`
+	OpenAlex        OpenAlexConfig        `json:"open_alex"`
 	Extractor       ExtractorConfig       `json:"extractor"`
 	Koha            KohaConfig            `json:"koha"`
 	Ntfy            NtfyConfig            `json:"ntfy"`
@@ -64,9 +66,15 @@ type LinkwardenConfig struct {
 type OllamaConfig struct {
 	BaseURL     string  `json:"base_url" env:"OLLAMA_BASE_URL" default:"http://localhost:11434"`
 	Model       string  `json:"model" env:"OLLAMA_MODEL" default:"llama2"`
+	EmbedModel  string  `json:"embed_model" env:"OLLAMA_EMBED_MODEL" default:"qwen3-embedding:8b"`
 	Timeout     int     `json:"timeout" env:"OLLAMA_TIMEOUT" default:"300"`
 	MaxTokens   int     `json:"max_tokens" env:"OLLAMA_MAX_TOKENS" default:"2048"`
 	Temperature float64 `json:"temperature" env:"OLLAMA_TEMPERATURE" default:"0.7"`
+}
+
+type BriefConfig struct {
+	MinScore float64 `json:"min_score"` // BRIEF_MIN_SCORE, default 0.0
+	TopK     int     `json:"top_k"`     // BRIEF_TOP_K, default 5
 }
 
 type OpenLibraryConfig struct {
@@ -80,6 +88,11 @@ type ArXivConfig struct {
 type SemanticScholarConfig struct {
 	Timeout int    `json:"timeout" env:"SEMANTIC_SCHOLAR_TIMEOUT" default:"30"`
 	APIKey  string `json:"api_key" env:"SEMANTIC_SCHOLAR_API_KEY"`
+}
+
+type OpenAlexConfig struct {
+	Timeout int    `json:"timeout" env:"OPENALEX_TIMEOUT" default:"30"`
+	MailTo  string `json:"mailto" env:"OPENALEX_MAILTO"` // polite pool opt-in
 }
 
 type SearXNGConfig struct {
@@ -145,9 +158,14 @@ func Load(configPath string) (*Config, error) {
 		Ollama: OllamaConfig{
 			BaseURL:     getEnv("OLLAMA_BASE_URL", "http://localhost:11434"),
 			Model:       getEnv("OLLAMA_MODEL", "llama2"),
+			EmbedModel:  getEnv("OLLAMA_EMBED_MODEL", "qwen3-embedding:8b"),
 			Timeout:     getEnvInt("OLLAMA_TIMEOUT", 300),
 			MaxTokens:   getEnvInt("OLLAMA_MAX_TOKENS", 2048),
 			Temperature: getEnvFloat("OLLAMA_TEMPERATURE", 0.7),
+		},
+		Brief: BriefConfig{
+			MinScore: getEnvFloat("BRIEF_MIN_SCORE", 0.0),
+			TopK:     getEnvInt("BRIEF_TOP_K", 5),
 		},
 		SearXNG: SearXNGConfig{
 			BaseURL: getEnv("SEARXNG_BASE_URL", ""),
@@ -162,6 +180,10 @@ func Load(configPath string) (*Config, error) {
 		SemanticScholar: SemanticScholarConfig{
 			Timeout: getEnvInt("SEMANTIC_SCHOLAR_TIMEOUT", 30),
 			APIKey:  getEnv("SEMANTIC_SCHOLAR_API_KEY", ""),
+		},
+		OpenAlex: OpenAlexConfig{
+			Timeout: getEnvInt("OPENALEX_TIMEOUT", 30),
+			MailTo:  getEnv("OPENALEX_MAILTO", ""),
 		},
 		Extractor: ExtractorConfig{
 			UserAgent: getEnv("EXTRACTOR_USER_AGENT", "Minerva/1.0"),

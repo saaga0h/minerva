@@ -102,15 +102,28 @@ func (a *ArXiv) executeSearch(query string, maxResults int) ([]PaperRecommendati
 
 	a.logger.WithField("url", searchURL).Debug("Querying arXiv API")
 
-	req, err := http.NewRequest("GET", searchURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create arXiv request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Minerva/1.0 (Knowledge Curation System)")
+	var resp *http.Response
+	backoff := 30 * time.Second
+	for attempt := 0; attempt < 4; attempt++ {
+		// Create a fresh request each attempt — http.Request cannot be reused after body read.
+		retryReq, err := http.NewRequest("GET", searchURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create arXiv request: %w", err)
+		}
+		retryReq.Header.Set("User-Agent", "Minerva/1.0 (Knowledge Curation System)")
 
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("arXiv request failed: %w", err)
+		var doErr error
+		resp, doErr = a.client.Do(retryReq)
+		if doErr != nil {
+			return nil, fmt.Errorf("arXiv request failed: %w", doErr)
+		}
+		if resp.StatusCode != http.StatusTooManyRequests {
+			break
+		}
+		resp.Body.Close()
+		a.logger.WithField("backoff", backoff).Warn("arXiv 429 — backing off")
+		time.Sleep(backoff)
+		backoff *= 2
 	}
 	defer resp.Body.Close()
 

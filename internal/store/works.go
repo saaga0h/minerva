@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
+	pgvector "github.com/pgvector/pgvector-go"
 )
 
 // WorkInput mirrors the fields of a WorkCandidate for storage.
@@ -22,6 +24,7 @@ type WorkInput struct {
 	Publisher    string
 	CoverURL     string
 	Relevance    float64
+	Embedding    []float32 // semantic embedding vector; nil if unavailable
 }
 
 // CanonicalID computes the dedup key for a work:
@@ -63,11 +66,18 @@ func (db *DB) UpsertWork(ctx context.Context, w WorkInput) (int64, error) {
 		return 0, fmt.Errorf("marshal sources: %w", err)
 	}
 
+	// Encode embedding: nil slice → NULL in Postgres.
+	// COALESCE on conflict preserves an existing embedding if the new source has none.
+	var embeddingArg any
+	if len(w.Embedding) > 0 {
+		embeddingArg = pgvector.NewVector(w.Embedding)
+	}
+
 	const q = `
 		INSERT INTO works (
 			canonical_id, reference_ids, sources, work_type, title, authors,
-			publisher, publish_year, isbn, isbn13, issn, doi, arxiv_id, cover_url
-		) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14)
+			publisher, publish_year, isbn, isbn13, issn, doi, arxiv_id, cover_url, embedding
+		) VALUES ($1, $2::jsonb, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		ON CONFLICT (canonical_id) DO UPDATE SET
 			reference_ids = (
 				SELECT jsonb_agg(DISTINCT v)
@@ -76,7 +86,8 @@ func (db *DB) UpsertWork(ctx context.Context, w WorkInput) (int64, error) {
 			sources = (
 				SELECT jsonb_agg(DISTINCT v)
 				FROM jsonb_array_elements(works.sources || EXCLUDED.sources) v
-			)
+			),
+			embedding = COALESCE(EXCLUDED.embedding, works.embedding)
 		RETURNING work_id
 	`
 
@@ -96,6 +107,7 @@ func (db *DB) UpsertWork(ctx context.Context, w WorkInput) (int64, error) {
 		nilIfEmpty(w.DOI),
 		nilIfEmpty(w.ArXivID),
 		nilIfEmpty(w.CoverURL),
+		embeddingArg,
 	).Scan(&workID)
 	if err != nil {
 		return 0, fmt.Errorf("upsert work: %w", err)

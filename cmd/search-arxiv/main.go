@@ -56,20 +56,23 @@ func main() {
 	arxiv := services.NewArXiv(cfg.ArXiv)
 	arxiv.SetLogger(log)
 
-	// Subscribe to analyzed articles — search for paper recommendations
-	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
-		data := make([]byte, len(payload))
-		copy(data, payload)
-		go func() {
-			var msg mqttclient.AnalyzedArticle
-			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal AnalyzedArticle")
-				return
-			}
+	// Ollama client for embedding — no mutex needed, embed is concurrent-safe
+	ollama := services.NewOllama(cfg.Ollama)
+	ollama.SetLogger(log)
+
+	type workItem struct{ msg mqttclient.AnalyzedArticle }
+
+	// Single-worker queue — arXiv asks for ~3s between requests; a concurrent
+	// fan-out would just accumulate 429s. Handler enqueues without blocking;
+	// worker drains sequentially with a inter-request delay.
+	queue := make(chan workItem, 256)
+	go func() {
+		for item := range queue {
+			msg := item.msg
 
 			if len(msg.Keywords) == 0 {
 				log.WithField("article_id", msg.ArticleID).Warn("No keywords — skipping arXiv search")
-				return
+				continue
 			}
 
 			log.WithFields(logrus.Fields{
@@ -80,11 +83,21 @@ func main() {
 			papers, err := arxiv.SearchPapers(msg.Keywords, msg.Insights)
 			if err != nil {
 				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("arXiv search failed — skipping")
-				return
+				time.Sleep(5 * time.Second)
+				continue
 			}
 
 			candidates := make([]mqttclient.WorkCandidate, 0, len(papers))
 			for _, p := range papers {
+				// Best-effort embedding: title + abstract. On failure, nil embedding — article still publishes.
+				embedding, embedErr := ollama.Embed(p.Title + " " + p.Abstract)
+				if embedErr != nil {
+					log.WithError(embedErr).WithFields(logrus.Fields{
+						"article_id": msg.ArticleID,
+						"arxiv_id":   p.ArXivID,
+					}).Warn("Embed failed for arXiv work — continuing without embedding")
+					embedding = nil
+				}
 				candidates = append(candidates, mqttclient.WorkCandidate{
 					ReferenceID:  "arxiv:" + p.ArXivID,
 					SearchSource: "arxiv",
@@ -94,6 +107,7 @@ func main() {
 					ArXivID:      p.ArXivID,
 					PublishYear:  p.PublishYear,
 					Relevance:    p.Relevance,
+					Embedding:    embedding,
 				})
 			}
 
@@ -111,13 +125,28 @@ func main() {
 
 			if err := mqttClient.Publish(mqttclient.TopicWorksCandidates, out); err != nil {
 				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish WorkCandidates")
-				return
+			} else {
+				log.WithFields(logrus.Fields{
+					"article_id":   msg.ArticleID,
+					"papers_found": len(candidates),
+				}).Debug("Published arXiv paper candidates")
 			}
 
-			log.WithFields(logrus.Fields{
-				"article_id":   msg.ArticleID,
-				"papers_found": len(candidates),
-			}).Debug("Published arXiv paper candidates")
+			time.Sleep(6 * time.Second) // arXiv asks for 3s per request; 2 requests per article = 6s gap
+		}
+	}()
+
+	// Subscribe to analyzed articles — enqueue for sequential processing.
+	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
+		data := make([]byte, len(payload))
+		copy(data, payload)
+		go func() {
+			var msg mqttclient.AnalyzedArticle
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.WithError(err).Warn("Failed to unmarshal AnalyzedArticle")
+				return
+			}
+			queue <- workItem{msg}
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to articles/analyzed")

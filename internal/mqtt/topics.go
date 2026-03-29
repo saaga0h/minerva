@@ -30,4 +30,12 @@ const (
 	// TopicPipelineDigest triggers the notifier to send a digest notification.
 	// Notifier subscribes here; publish with `make digest`.
 	TopicPipelineDigest = "minerva/pipeline/digest"
+
+	// TopicQueryBrief is where Journal publishes ANN queries.
+	// cmd/brief subscribes and responds to msg.ResponseTopic.
+	TopicQueryBrief = "minerva/query/brief"
+
+	// TopicBriefResult is where cmd/brief publishes session results (Minerva-internal).
+	// cmd/store subscribes to log brief sessions.
+	TopicBriefResult = "minerva/brief/result"
 )

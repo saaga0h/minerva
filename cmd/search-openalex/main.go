@@ -39,7 +39,7 @@ func main() {
 
 	// MQTT client
 	brokerURL := getEnv("MQTT_BROKER_URL", "tcp://localhost:1883")
-	clientID := getEnv("MQTT_CLIENT_ID", "minerva-search-openlibrary")
+	clientID := getEnv("MQTT_CLIENT_ID", "minerva-search-openalex")
 	mqttClient, err := mqttclient.NewClient(mqttclient.ClientConfig{
 		BrokerURL: brokerURL,
 		ClientID:  clientID,
@@ -52,65 +52,59 @@ func main() {
 	defer mqttClient.Disconnect()
 	mqttClient.SetLogger(log)
 
-	// OpenLibrary service
-	openLibrary := services.NewOpenLibrary(cfg.OpenLibrary)
-	openLibrary.SetLogger(log)
+	// OpenAlex service
+	openalex := services.NewOpenAlex(cfg.OpenAlex)
+	openalex.SetLogger(log)
 
 	// Ollama client for embedding — no mutex needed, embed is concurrent-safe
 	ollama := services.NewOllama(cfg.Ollama)
 	ollama.SetLogger(log)
 
-	// Subscribe to analyzed articles — search for book recommendations
-	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
-		data := make([]byte, len(payload))
-		copy(data, payload)
-		go func() {
-			var msg mqttclient.AnalyzedArticle
-			if err := json.Unmarshal(data, &msg); err != nil {
-				log.WithError(err).Warn("Failed to unmarshal AnalyzedArticle")
-				return
-			}
+	type workItem struct{ msg mqttclient.AnalyzedArticle }
+
+	// Single-worker queue — polite access, sequential requests with inter-request delay.
+	queue := make(chan workItem, 256)
+	go func() {
+		for item := range queue {
+			msg := item.msg
 
 			if len(msg.Keywords) == 0 {
-				log.WithField("article_id", msg.ArticleID).Warn("No keywords — skipping OpenLibrary search")
-				return
+				log.WithField("article_id", msg.ArticleID).Warn("No keywords — skipping OpenAlex search")
+				continue
 			}
 
 			log.WithFields(logrus.Fields{
 				"article_id":     msg.ArticleID,
 				"keywords_count": len(msg.Keywords),
-			}).Debug("Searching books via OpenLibrary")
+			}).Debug("Searching papers via OpenAlex")
 
-			recommendations, err := openLibrary.SearchBooks(msg.Keywords, msg.Insights)
+			papers, err := openalex.SearchPapers(msg.Keywords, msg.Insights)
 			if err != nil {
-				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("OpenLibrary search failed — skipping")
-				return
+				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("OpenAlex search failed — skipping")
+				time.Sleep(5 * time.Second)
+				continue
 			}
 
-			candidates := make([]mqttclient.WorkCandidate, 0, len(recommendations))
-			for _, rec := range recommendations {
-				// Best-effort embedding: title only (no abstract from OpenLibrary).
-				// On failure, nil embedding — work still publishes.
-				embedding, embedErr := ollama.Embed(rec.Title)
+			candidates := make([]mqttclient.WorkCandidate, 0, len(papers))
+			for _, p := range papers {
+				embedding, embedErr := ollama.Embed(p.Title + " " + p.Abstract)
 				if embedErr != nil {
 					log.WithError(embedErr).WithFields(logrus.Fields{
-						"article_id":      msg.ArticleID,
-						"openlibrary_key": rec.OpenLibraryKey,
-					}).Warn("Embed failed for OpenLibrary work — continuing without embedding")
+						"article_id": msg.ArticleID,
+						"paper_id":   p.PaperID,
+					}).Warn("Embed failed for OpenAlex work — continuing without embedding")
 					embedding = nil
 				}
 				candidates = append(candidates, mqttclient.WorkCandidate{
-					ReferenceID:  "openlibrary:" + rec.OpenLibraryKey,
-					SearchSource: "openlibrary",
-					WorkType:     "book",
-					Title:        rec.Title,
-					Authors:      []string{rec.Author},
-					ISBN:         rec.ISBN,
-					ISBN13:       rec.ISBN13,
-					PublishYear:  rec.PublishYear,
-					Publisher:    rec.Publisher,
-					CoverURL:     rec.CoverURL,
-					Relevance:    rec.Relevance,
+					ReferenceID:  p.PaperID, // "openalex:W..."
+					SearchSource: "openalex",
+					WorkType:     "paper",
+					Title:        p.Title,
+					Authors:      []string{p.Authors},
+					DOI:          p.DOI,
+					ArXivID:      p.ArXivID,
+					PublishYear:  p.PublishYear,
+					Relevance:    p.Relevance,
 					Embedding:    embedding,
 				})
 			}
@@ -129,13 +123,28 @@ func main() {
 
 			if err := mqttClient.Publish(mqttclient.TopicWorksCandidates, out); err != nil {
 				log.WithError(err).WithField("article_id", msg.ArticleID).Error("Failed to publish WorkCandidates")
-				return
+			} else {
+				log.WithFields(logrus.Fields{
+					"article_id":   msg.ArticleID,
+					"papers_found": len(candidates),
+				}).Debug("Published OpenAlex paper candidates")
 			}
 
-			log.WithFields(logrus.Fields{
-				"article_id":  msg.ArticleID,
-				"works_found": len(candidates),
-			}).Debug("Published work candidates")
+			time.Sleep(2 * time.Second)
+		}
+	}()
+
+	// Subscribe to analyzed articles — enqueue for sequential processing.
+	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
+		data := make([]byte, len(payload))
+		copy(data, payload)
+		go func() {
+			var msg mqttclient.AnalyzedArticle
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.WithError(err).Warn("Failed to unmarshal AnalyzedArticle")
+				return
+			}
+			queue <- workItem{msg}
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to articles/analyzed")
@@ -144,12 +153,12 @@ func main() {
 	log.WithFields(logrus.Fields{
 		"broker":    brokerURL,
 		"client_id": clientID,
-	}).Info("search-openlibrary primitive ready — listening for analyzed articles")
+	}).Info("search-openalex primitive ready — listening for analyzed articles")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	<-sigCh
-	log.Info("Shutting down search-openlibrary primitive")
+	log.Info("Shutting down search-openalex primitive")
 }
 
 func getEnv(key, defaultValue string) string {

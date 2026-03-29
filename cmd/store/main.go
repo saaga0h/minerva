@@ -120,6 +120,7 @@ func main() {
 				Entities:      entities,
 				Insights:      msg.Insights,
 				AnalyzedAt:    msg.Timestamp,
+				Embedding:     msg.Embedding,
 			}
 
 			if err := db.UpsertArticleAnalysis(ctx, a); err != nil {
@@ -165,6 +166,7 @@ func main() {
 					Publisher:    w.Publisher,
 					CoverURL:     w.CoverURL,
 					Relevance:    w.Relevance,
+					Embedding:    w.Embedding,
 				}
 
 				workID, err := db.UpsertWork(ctx, wi)
@@ -227,6 +229,33 @@ func main() {
 		}()
 	}); err != nil {
 		log.WithError(err).Fatal("Failed to subscribe to works/checked")
+	}
+
+	// ── minerva/brief/result ────────────────────────────────────────────────
+	// Log Journal brief query results to brief_sessions for observability.
+	if err := mqttClient.Subscribe(mqttclient.TopicBriefResult, func(payload []byte) {
+		data := make([]byte, len(payload))
+		copy(data, payload)
+		go func() {
+			var msg mqttclient.BriefResult
+			if err := json.Unmarshal(data, &msg); err != nil {
+				log.WithError(err).Warn("store: failed to unmarshal BriefResult")
+				return
+			}
+
+			if err := db.InsertBriefSession(ctx, msg.SessionID, msg.QueriedAt, msg.Articles, msg.Works); err != nil {
+				log.WithError(err).WithField("session_id", msg.SessionID).Warn("store: failed to insert brief session")
+				return
+			}
+
+			log.WithFields(logrus.Fields{
+				"session_id": msg.SessionID,
+				"articles":   len(msg.Articles),
+				"works":      len(msg.Works),
+			}).Debug("store: saved brief session")
+		}()
+	}); err != nil {
+		log.WithError(err).Fatal("Failed to subscribe to brief/result")
 	}
 
 	log.WithFields(logrus.Fields{

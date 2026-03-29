@@ -51,24 +51,26 @@ type AnalyzedArticle struct {
 	RelatedTopics []string        `json:"related_topics"` // Pass3 related topics, separate from keywords
 	Entities      ArticleEntities `json:"entities"`       // Full Pass2 entity extraction
 	Insights      string          `json:"insights"`
+	Embedding     []float32       `json:"embedding,omitempty"` // semantic embedding from Ollama /api/embed
 }
 
 // WorkCandidate represents a single discovered book or paper from any search source.
 type WorkCandidate struct {
-	ReferenceID  string   `json:"reference_id"`  // source:item-id, e.g. "openlibrary:/works/OL123W"
-	SearchSource string   `json:"search_source"` // "openlibrary" | "arxiv" | etc.
-	WorkType     string   `json:"work_type"`     // "book" | "paper"
-	Title        string   `json:"title"`
-	Authors      []string `json:"authors"`
-	ISBN         string   `json:"isbn"`
-	ISBN13       string   `json:"isbn13"`
-	ISSN         string   `json:"issn"`
-	DOI          string   `json:"doi"`
-	ArXivID      string   `json:"arxiv_id"`
-	PublishYear  int      `json:"publish_year"`
-	Publisher    string   `json:"publisher"`
-	CoverURL     string   `json:"cover_url"`
-	Relevance    float64  `json:"relevance"`
+	ReferenceID  string    `json:"reference_id"`  // source:item-id, e.g. "openlibrary:/works/OL123W"
+	SearchSource string    `json:"search_source"` // "openlibrary" | "arxiv" | etc.
+	WorkType     string    `json:"work_type"`     // "book" | "paper"
+	Title        string    `json:"title"`
+	Authors      []string  `json:"authors"`
+	ISBN         string    `json:"isbn"`
+	ISBN13       string    `json:"isbn13"`
+	ISSN         string    `json:"issn"`
+	DOI          string    `json:"doi"`
+	ArXivID      string    `json:"arxiv_id"`
+	PublishYear  int       `json:"publish_year"`
+	Publisher    string    `json:"publisher"`
+	CoverURL     string    `json:"cover_url"`
+	Relevance    float64   `json:"relevance"`
+	Embedding    []float32 `json:"embedding,omitempty"` // semantic embedding from Ollama /api/embed
 }
 
 // WorkCandidates is published by any search primitive to TopicWorksCandidates.
@@ -100,4 +102,53 @@ type OwnedWork struct {
 type ArticleComplete struct {
 	Envelope
 	CompletedAt time.Time `json:"completed_at"`
+}
+
+// BriefQuery is published by Journal to TopicQueryBrief.
+// cmd/brief subscribes and returns a BriefResponse to msg.ResponseTopic.
+type BriefQuery struct {
+	SessionID            string             `json:"session_id"`
+	ManifoldProfile      map[string]float32 `json:"manifold_profile"`
+	TrendEmbeddings      [][]float32        `json:"trend_embeddings,omitempty"`
+	UnexpectedEmbeddings [][]float32        `json:"unexpected_embeddings,omitempty"`
+	SoulSpeed            float32            `json:"soul_speed"`
+	TopK                 int                `json:"top_k"`
+	ResponseTopic        string             `json:"response_topic"`
+}
+
+// BriefArticle is a single article result in a BriefResponse.
+type BriefArticle struct {
+	ArticleID string  `json:"article_id"`
+	URL       string  `json:"url"`
+	Title     string  `json:"title"`
+	Score     float32 `json:"score"`
+}
+
+// BriefWork is a single work (book or paper) result in a BriefResponse.
+type BriefWork struct {
+	WorkID      int     `json:"work_id"`
+	WorkType    string  `json:"work_type"` // "book" or "paper"
+	Title       string  `json:"title"`
+	Authors     string  `json:"authors,omitempty"`
+	DOI         string  `json:"doi,omitempty"`
+	ArXivID     string  `json:"arxiv_id,omitempty"`
+	ISBN13      string  `json:"isbn13,omitempty"`
+	PublishYear int     `json:"publish_year,omitempty"`
+	Score       float32 `json:"score"`
+}
+
+// BriefResponse is published by cmd/brief to msg.ResponseTopic (Journal-facing).
+type BriefResponse struct {
+	SessionID string         `json:"session_id"`
+	Articles  []BriefArticle `json:"articles"`
+	Works     []BriefWork    `json:"works"`
+}
+
+// BriefResult is published by cmd/brief to TopicBriefResult (Minerva-internal).
+// cmd/store subscribes to persist the full session — articles and works ranked by score.
+type BriefResult struct {
+	SessionID string         `json:"session_id"`
+	Articles  []BriefArticle `json:"articles"`
+	Works     []BriefWork    `json:"works"`
+	QueriedAt time.Time      `json:"queried_at"`
 }

@@ -379,6 +379,48 @@ EOT
       }
     }
 
+    # ── search-openalex ───────────────────────────────────────────────────────
+
+    task "search-openalex" {
+      driver = "raw_exec"
+      config {
+        command = "/bin/sh"
+        args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/search-openalex && exec ${NOMAD_TASK_DIR}/search-openalex"]
+      }
+      artifact {
+        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/search-openalex"
+        destination = "local/search-openalex"
+        mode        = "file"
+      }
+      template {
+        destination = "secrets/minerva.env"
+        env         = true
+        data        = <<EOT
+{{ with secret "secret/data/nomad/minerva" }}
+MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
+OLLAMA_BASE_URL={{ .Data.data.OLLAMA_BASE_URL }}
+OLLAMA_EMBED_MODEL={{ .Data.data.OLLAMA_EMBED_MODEL }}
+OPENALEX_TIMEOUT={{ .Data.data.OPENALEX_TIMEOUT }}
+OPENALEX_MAILTO={{ .Data.data.OPENALEX_MAILTO }}
+LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
+{{ end }}
+EOT
+      }
+      vault {
+        policies = ["minerva"]
+      }
+      resources {
+        cpu    = 100
+        memory = 64
+      }
+      service {
+        name = "minerva-search-openalex"
+        tags = ["minerva"]
+      }
+    }
+
     # ── koha-check ────────────────────────────────────────────────────────────
 
     task "koha-check" {
@@ -504,6 +546,54 @@ EOT
       }
       service {
         name = "minerva-store"
+        tags = ["minerva"]
+      }
+    }
+
+    # ── brief ─────────────────────────────────────────────────────────────────
+
+    task "brief" {
+      driver = "raw_exec"
+      config {
+        command = "/bin/sh"
+        args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/brief && exec ${NOMAD_TASK_DIR}/brief"]
+      }
+      artifact {
+        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/brief"
+        destination = "local/brief"
+        mode        = "file"
+      }
+      template {
+        destination = "secrets/minerva.env"
+        env         = true
+        data        = <<EOT
+{{ with secret "secret/data/nomad/minerva" }}
+DB_HOST={{ .Data.data.DB_HOST }}
+DB_PORT={{ .Data.data.DB_PORT }}
+DB_USER={{ .Data.data.DB_USER }}
+DB_PASSWORD={{ .Data.data.DB_PASSWORD }}
+DB_NAME={{ .Data.data.DB_NAME }}
+DB_SSLMODE={{ .Data.data.DB_SSLMODE }}
+MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
+MQTT_USER={{ .Data.data.MQTT_USER }}
+MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
+OLLAMA_BASE_URL={{ .Data.data.OLLAMA_BASE_URL }}
+OLLAMA_EMBED_MODEL={{ .Data.data.OLLAMA_EMBED_MODEL }}
+BRIEF_MIN_SCORE={{ .Data.data.BRIEF_MIN_SCORE }}
+BRIEF_TOP_K={{ .Data.data.BRIEF_TOP_K }}
+LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
+{{ end }}
+EOT
+      }
+      vault {
+        policies = ["minerva"]
+      }
+      resources {
+        cpu    = 100
+        memory = 128
+      }
+      service {
+        name = "minerva-brief"
         tags = ["minerva"]
       }
     }

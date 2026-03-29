@@ -110,6 +110,17 @@ func main() {
 				strings.Join(multiPass.Pass3.RelatedTopics, ", "),
 			)
 
+			// Embed after releasing ollamaMu — embed is stateless and concurrent-safe.
+			// Best-effort: on failure log warn and continue with nil embedding.
+			embedText := multiPass.Pass1.Topic + " " +
+				strings.Join(uniqueKeywords, " ") + " " +
+				strings.Join(multiPass.Pass3.Concepts, " ")
+			embedding, embedErr := ollama.Embed(embedText)
+			if embedErr != nil {
+				log.WithError(embedErr).WithField("article_id", msg.ArticleID).Warn("Embed failed — continuing without embedding")
+				embedding = nil
+			}
+
 			out := mqttclient.AnalyzedArticle{
 				Envelope: mqttclient.Envelope{
 					MessageID: generateID(),
@@ -132,7 +143,8 @@ func main() {
 					Locations:  multiPass.Pass2.Locations,
 					Phenomena:  multiPass.Pass2.Phenomena,
 				},
-				Insights: insights,
+				Insights:  insights,
+				Embedding: embedding,
 			}
 
 			if err := mqttClient.Publish(mqttclient.TopicArticlesAnalyzed, out); err != nil {
@@ -144,6 +156,7 @@ func main() {
 				"article_id":     msg.ArticleID,
 				"domain":         multiPass.Pass1.Domain,
 				"keywords_count": len(uniqueKeywords),
+				"has_embedding":  embedding != nil,
 			}).Debug("Published analyzed article")
 		}()
 	}); err != nil {

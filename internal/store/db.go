@@ -4,8 +4,14 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pgvector "github.com/pgvector/pgvector-go"
+	pgxvec "github.com/pgvector/pgvector-go/pgx"
 )
+
+// Ensure pgvector.Vector is imported for use across the package.
+var _ = pgvector.NewVector
 
 // DB wraps a PostgreSQL connection pool.
 type DB struct {
@@ -13,8 +19,31 @@ type DB struct {
 }
 
 // New creates a connection pool and runs schema migrations.
+// It first ensures the pgvector extension exists using a plain connection,
+// then recreates the pool with AfterConnect type registration.
 func New(ctx context.Context, dsn string) (*DB, error) {
-	pool, err := pgxpool.New(ctx, dsn)
+	// Phase 1: create pgvector extension on a plain connection so that
+	// AfterConnect type registration (which queries for the vector OID) succeeds.
+	plainConn, err := pgx.Connect(ctx, dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect for pre-migration: %w", err)
+	}
+	if _, err := plainConn.Exec(ctx, "CREATE EXTENSION IF NOT EXISTS vector"); err != nil {
+		plainConn.Close(ctx)
+		return nil, fmt.Errorf("failed to create vector extension: %w", err)
+	}
+	plainConn.Close(ctx)
+
+	// Phase 2: build pool with pgvector codec registered on every connection.
+	poolCfg, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse DSN: %w", err)
+	}
+	poolCfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		return pgxvec.RegisterTypes(ctx, conn)
+	}
+
+	pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create connection pool: %w", err)
 	}
@@ -126,6 +155,71 @@ func (db *DB) migrate(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_article_works_article_id ON article_works (article_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_article_works_work_id    ON article_works (work_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_article_works_relevance  ON article_works (relevance DESC)`,
+
+		// Vector embedding columns (pgvector extension created in New() before pool init)
+		`ALTER TABLE articles ADD COLUMN IF NOT EXISTS embedding vector(4096)`,
+		`ALTER TABLE works    ADD COLUMN IF NOT EXISTS embedding vector(4096)`,
+
+		`CREATE TABLE IF NOT EXISTS brief_sessions (
+			id          SERIAL PRIMARY KEY,
+			session_id  TEXT NOT NULL UNIQUE,
+			queried_at  TIMESTAMPTZ DEFAULT now()
+		)`,
+
+		// Deduplicate brief_sessions keeping the earliest row per session_id, then add unique constraint.
+		`DELETE FROM brief_sessions WHERE id NOT IN (
+			SELECT MIN(id) FROM brief_sessions GROUP BY session_id
+		)`,
+		`DO $$ BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint
+				WHERE conrelid = 'brief_sessions'::regclass AND conname = 'brief_sessions_session_id_key'
+			) THEN
+				ALTER TABLE brief_sessions ADD CONSTRAINT brief_sessions_session_id_key UNIQUE (session_id);
+			END IF;
+		END $$`,
+
+		// Drop old single-article columns if they exist (legacy schema).
+		`ALTER TABLE brief_sessions DROP COLUMN IF EXISTS article_id`,
+		`ALTER TABLE brief_sessions DROP COLUMN IF EXISTS article_url`,
+		`ALTER TABLE brief_sessions DROP COLUMN IF EXISTS article_title`,
+		`ALTER TABLE brief_sessions DROP COLUMN IF EXISTS score`,
+
+		`CREATE INDEX IF NOT EXISTS idx_brief_sessions_session_id ON brief_sessions (session_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_brief_sessions_queried_at ON brief_sessions (queried_at DESC)`,
+
+		`CREATE TABLE IF NOT EXISTS brief_session_articles (
+			id          SERIAL PRIMARY KEY,
+			session_id  TEXT NOT NULL REFERENCES brief_sessions(session_id) ON DELETE CASCADE,
+			article_id  TEXT REFERENCES articles(article_id) ON DELETE SET NULL,
+			url         TEXT,
+			title       TEXT,
+			score       REAL,
+			rank        INT
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_brief_session_articles_session ON brief_session_articles (session_id)`,
+
+		`CREATE TABLE IF NOT EXISTS brief_session_works (
+			id          SERIAL PRIMARY KEY,
+			session_id  TEXT NOT NULL REFERENCES brief_sessions(session_id) ON DELETE CASCADE,
+			work_id     INT REFERENCES works(work_id) ON DELETE SET NULL,
+			work_type   TEXT,
+			title       TEXT,
+			authors     TEXT,
+			doi         TEXT,
+			arxiv_id    TEXT,
+			isbn13      TEXT,
+			publish_year INT,
+			score       REAL,
+			rank        INT
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_brief_session_works_session ON brief_session_works (session_id)`,
+		// HNSW indexes on vector(4096) columns can be added manually once the corpus
+		// is large enough to benefit from ANN indexing:
+		//   CREATE INDEX idx_articles_embedding ON articles USING hnsw (embedding vector_cosine_ops);
+		//   CREATE INDEX idx_works_embedding    ON works    USING hnsw (embedding vector_cosine_ops);
 	}
 
 	for _, stmt := range statements {

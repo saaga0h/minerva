@@ -56,6 +56,10 @@ func main() {
 	s2 := services.NewSemanticScholar(cfg.SemanticScholar)
 	s2.SetLogger(log)
 
+	// Ollama client for embedding — no mutex needed, embed is concurrent-safe
+	ollama := services.NewOllama(cfg.Ollama)
+	ollama.SetLogger(log)
+
 	// Single-worker queue — Semantic Scholar free tier allows ~1 req/s; a worker pool
 	// with concurrency > 1 would just queue up 429s. The MQTT handler enqueues without
 	// blocking; the worker drains sequentially (throttle() in the service enforces the gap).
@@ -89,6 +93,16 @@ func main() {
 					referenceID = "arxiv:" + p.ArXivID
 				}
 
+				// Best-effort embedding: title + abstract. On failure, nil — work still publishes.
+				embedding, embedErr := ollama.Embed(p.Title + " " + p.Abstract)
+				if embedErr != nil {
+					log.WithError(embedErr).WithFields(logrus.Fields{
+						"article_id": msg.ArticleID,
+						"paper_id":   p.PaperID,
+					}).Warn("Embed failed for Semantic Scholar work — continuing without embedding")
+					embedding = nil
+				}
+
 				candidates = append(candidates, mqttclient.WorkCandidate{
 					ReferenceID:  referenceID,
 					SearchSource: "semantic-scholar",
@@ -98,6 +112,7 @@ func main() {
 					ArXivID:      p.ArXivID,
 					PublishYear:  p.PublishYear,
 					Relevance:    p.Relevance,
+					Embedding:    embedding,
 				})
 			}
 

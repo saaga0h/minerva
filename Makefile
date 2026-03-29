@@ -5,8 +5,8 @@ BUILD_DIR := ./build
 .PHONY: help dev dev-clean build fmt lint test query \
         run-source-freshrss run-source-miniflux run-source-linkwarden \
         run-extractor run-analyzer \
-        run-search-openlibrary run-search-arxiv run-search-semantic-scholar \
-        run-koha-check run-notifier run-store run-state \
+        run-search-openlibrary run-search-arxiv run-search-semantic-scholar run-search-openalex \
+        run-koha-check run-notifier run-store run-state run-brief \
         trigger digest
 
 # ── Help ──────────────────────────────────────────────────────────────────────
@@ -38,10 +38,12 @@ build: ## Build all primitive binaries
 	go build -o $(BUILD_DIR)/search-openlibrary      ./cmd/search-openlibrary/
 	go build -o $(BUILD_DIR)/search-arxiv            ./cmd/search-arxiv/
 	go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/
+	go build -o $(BUILD_DIR)/search-openalex        ./cmd/search-openalex/
 	go build -o $(BUILD_DIR)/koha-check              ./cmd/koha-check/
 	go build -o $(BUILD_DIR)/notifier                ./cmd/notifier/
 	go build -o $(BUILD_DIR)/store                   ./cmd/store/
 	go build -o $(BUILD_DIR)/state                   ./cmd/state/
+	go build -o $(BUILD_DIR)/brief                   ./cmd/brief/
 	go build -o $(BUILD_DIR)/trigger                 ./cmd/trigger/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
@@ -94,6 +96,10 @@ run-search-semantic-scholar: ## Run Semantic Scholar search primitive
 	go build -o $(BUILD_DIR)/search-semantic-scholar ./cmd/search-semantic-scholar/ && \
 	$(BUILD_DIR)/search-semantic-scholar -config .env.dev
 
+run-search-openalex: ## Run OpenAlex search primitive
+	go build -o $(BUILD_DIR)/search-openalex ./cmd/search-openalex/ && \
+	$(BUILD_DIR)/search-openalex -config .env.dev
+
 run-koha-check: ## Run Koha ownership check primitive
 	go build -o $(BUILD_DIR)/koha-check ./cmd/koha-check/ && \
 	$(BUILD_DIR)/koha-check -config .env.dev
@@ -109,6 +115,10 @@ run-store: ## Run store primitive (Postgres knowledge base observer)
 run-state: ## Run state primitive (pipeline crash recovery)
 	go build -o $(BUILD_DIR)/state ./cmd/state/ && \
 	$(BUILD_DIR)/state -config .env.dev
+
+run-brief: ## Run brief query primitive (Journal integration)
+	go build -o $(BUILD_DIR)/brief ./cmd/brief/ && \
+	$(BUILD_DIR)/brief -config .env.dev
 
 # ── Pipeline ──────────────────────────────────────────────────────────────────
 

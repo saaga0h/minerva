@@ -81,22 +81,30 @@ func (s *SemanticScholar) SearchPapers(keywords []string, insights string) ([]Pa
 	return s.executeSearch(query, 10)
 }
 
-func (s *SemanticScholar) doWithRetry(req *http.Request) (*http.Response, error) {
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Semantic Scholar request failed: %w", err)
+func (s *SemanticScholar) doWithRetry(searchURL string, apiKey string) (*http.Response, error) {
+	backoff := 30 * time.Second
+	for attempt := 0; attempt < 4; attempt++ {
+		req, err := http.NewRequest("GET", searchURL, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Semantic Scholar request: %w", err)
+		}
+		req.Header.Set("User-Agent", "Minerva/1.0 (Knowledge Curation System)")
+		if apiKey != "" {
+			req.Header.Set("x-api-key", apiKey)
+		}
+		resp, err := s.client.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("Semantic Scholar request failed: %w", err)
+		}
+		if resp.StatusCode != http.StatusTooManyRequests {
+			return resp, nil
+		}
+		resp.Body.Close()
+		s.logger.WithField("backoff", backoff).Warn("Semantic Scholar 429 — backing off")
+		time.Sleep(backoff)
+		backoff *= 2
 	}
-	if resp.StatusCode != http.StatusTooManyRequests {
-		return resp, nil
-	}
-	resp.Body.Close()
-	s.logger.Warn("Semantic Scholar 429 — backing off 15s and retrying once")
-	time.Sleep(15 * time.Second)
-	resp, err = s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Semantic Scholar retry failed: %w", err)
-	}
-	return resp, nil
+	return nil, fmt.Errorf("Semantic Scholar rate limited after retries")
 }
 
 func (s *SemanticScholar) executeSearch(query string, limit int) ([]PaperRecommendation, error) {
@@ -108,16 +116,7 @@ func (s *SemanticScholar) executeSearch(query string, limit int) ([]PaperRecomme
 	s.throttle()
 	s.logger.WithField("url", searchURL).Debug("Querying Semantic Scholar API")
 
-	req, err := http.NewRequest("GET", searchURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Semantic Scholar request: %w", err)
-	}
-	req.Header.Set("User-Agent", "Minerva/1.0 (Knowledge Curation System)")
-	if s.config.APIKey != "" {
-		req.Header.Set("x-api-key", s.config.APIKey)
-	}
-
-	resp, err := s.doWithRetry(req)
+	resp, err := s.doWithRetry(searchURL, s.config.APIKey)
 	if err != nil {
 		return nil, err
 	}
