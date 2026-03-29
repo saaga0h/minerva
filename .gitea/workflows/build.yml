@@ -1,11 +1,12 @@
 # Build and publish all Minerva binaries on every push to main.
 # Binaries are copied directly to the nginx artifact server on the packer host.
-# Served at: http://192.168.10.50:8080/api/binaries/minerva/<arch>/<binary>
+# Served at ARTIFACT_BASE/<arch>/<binary>
 #
 # Prerequisites:
 #   - Runner "packer" is the same host as the nginx artifact server
 #   - /var/lib/packer-builds/binaries/minerva/{amd64,arm64}/ directories exist
 #     and are writable by the act_runner user
+#   - Gitea repo variables: NOMAD_ADDR, ARTIFACT_BASE
 
 name: build
 
@@ -43,7 +44,9 @@ jobs:
 
       - name: Deploy Nomad jobs
         env:
-          NOMAD_ADDR: http://192.168.10.42:4646
+          NOMAD_ADDR: ${{ vars.NOMAD_ADDR }}
+          ARTIFACT_BASE: ${{ vars.ARTIFACT_BASE }}
         run: |
-          nomad job run deploy/nomad/minerva-daemons.hcl || true
-          nomad job run deploy/nomad/minerva-trigger.hcl || true
+          for hcl in deploy/nomad/*.hcl; do
+            envsubst '${ARTIFACT_BASE}' < "$hcl" | nomad job run -
+          done

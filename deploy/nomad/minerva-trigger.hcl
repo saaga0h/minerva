@@ -11,6 +11,10 @@ job "minerva-trigger" {
   datacenters = ["the-collective"]
   type        = "batch"
 
+  meta {
+    artifact_base = "${ARTIFACT_BASE}"
+  }
+
   constraint {
     attribute = "${meta.gpu}"
     operator  = "!="
@@ -40,7 +44,7 @@ job "minerva-trigger" {
       }
 
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/trigger"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/trigger"
         destination = "local/trigger"
         mode        = "file"
       }

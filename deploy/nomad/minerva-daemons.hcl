@@ -19,6 +19,10 @@ job "minerva-daemons" {
   datacenters = ["the-collective"]
   type        = "service"
 
+  meta {
+    artifact_base = "${ARTIFACT_BASE}"
+  }
+
   constraint {
     attribute = "${meta.gpu}"
     operator  = "!="
@@ -44,7 +48,7 @@ job "minerva-daemons" {
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/source-freshrss && exec ${NOMAD_TASK_DIR}/source-freshrss"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/source-freshrss"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/source-freshrss"
         destination = "local/source-freshrss"
         mode        = "file"
       }
@@ -91,7 +95,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/source-miniflux && exec ${NOMAD_TASK_DIR}/source-miniflux"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/source-miniflux"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/source-miniflux"
         destination = "local/source-miniflux"
         mode        = "file"
       }
@@ -138,7 +142,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/source-linkwarden && exec ${NOMAD_TASK_DIR}/source-linkwarden"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/source-linkwarden"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/source-linkwarden"
         destination = "local/source-linkwarden"
         mode        = "file"
       }
@@ -185,7 +189,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/extractor && exec ${NOMAD_TASK_DIR}/extractor"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/extractor"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/extractor"
         destination = "local/extractor"
         mode        = "file"
       }
@@ -226,7 +230,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/analyzer && exec ${NOMAD_TASK_DIR}/analyzer"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/analyzer"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/analyzer"
         destination = "local/analyzer"
         mode        = "file"
       }
@@ -270,7 +274,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/search-openlibrary && exec ${NOMAD_TASK_DIR}/search-openlibrary"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/search-openlibrary"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/search-openlibrary"
         destination = "local/search-openlibrary"
         mode        = "file"
       }
@@ -309,7 +313,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/search-arxiv && exec ${NOMAD_TASK_DIR}/search-arxiv"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/search-arxiv"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/search-arxiv"
         destination = "local/search-arxiv"
         mode        = "file"
       }
@@ -348,7 +352,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/search-semantic-scholar && exec ${NOMAD_TASK_DIR}/search-semantic-scholar"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/search-semantic-scholar"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/search-semantic-scholar"
         destination = "local/search-semantic-scholar"
         mode        = "file"
       }
@@ -388,7 +392,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/search-openalex && exec ${NOMAD_TASK_DIR}/search-openalex"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/search-openalex"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/search-openalex"
         destination = "local/search-openalex"
         mode        = "file"
       }
@@ -430,7 +434,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/koha-check && exec ${NOMAD_TASK_DIR}/koha-check"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/koha-check"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/koha-check"
         destination = "local/koha-check"
         mode        = "file"
       }
@@ -472,7 +476,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/notifier && exec ${NOMAD_TASK_DIR}/notifier"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/notifier"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/notifier"
         destination = "local/notifier"
         mode        = "file"
       }
@@ -515,7 +519,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/store && exec ${NOMAD_TASK_DIR}/store"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/store"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/store"
         destination = "local/store"
         mode        = "file"
       }
@@ -559,7 +563,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/brief && exec ${NOMAD_TASK_DIR}/brief"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/brief"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/brief"
         destination = "local/brief"
         mode        = "file"
       }
@@ -607,7 +611,7 @@ EOT
         args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/state && exec ${NOMAD_TASK_DIR}/state"]
       }
       artifact {
-        source      = "http://192.168.10.50:8080/api/binaries/minerva/${attr.cpu.arch}/state"
+        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/state"
         destination = "local/state"
         mode        = "file"
       }
