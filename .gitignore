@@ -1,3 +1,6 @@
+# Claude Code plans and memory (implementation scaffolding, not part of codebase)
+.claude/
+
 # Build artifacts
 /build/
 /dist/
