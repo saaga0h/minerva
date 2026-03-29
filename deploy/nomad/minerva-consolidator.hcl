@@ -24,9 +24,9 @@ job "minerva-consolidator" {
   }
 
   periodic {
-    crons            = ["45 7 * * *"]
+    crons            = ["15 8 * * *"]
     prohibit_overlap = true
-    time_zone        = "UTC"
+    time_zone        = "Europe/Helsinki"
   }
 
   group "consolidator" {
