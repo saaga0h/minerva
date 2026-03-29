@@ -18,7 +18,7 @@ job "minerva-trigger" {
   }
 
   periodic {
-    crons            = ["0 * * * *"]
+    crons            = ["0 19,23 * * *"]
     prohibit_overlap = true
     time_zone        = "UTC"
   }
