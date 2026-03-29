@@ -18,6 +18,7 @@
 /state
 /brief
 /trigger
+/consolidator
 
 # Go specific
 *.exe

@@ -38,4 +38,9 @@ const (
 	// TopicBriefResult is where cmd/brief publishes session results (Minerva-internal).
 	// cmd/store subscribes to log brief sessions.
 	TopicBriefResult = "minerva/brief/result"
+
+	// TopicConsolidatorDigest is published by cmd/consolidator after selecting the
+	// most interesting work from recent brief sessions. cmd/notifier subscribes and
+	// delivers via ntfy.
+	TopicConsolidatorDigest = "minerva/consolidator/digest"
 )

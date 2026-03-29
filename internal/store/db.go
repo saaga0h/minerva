@@ -216,6 +216,19 @@ func (db *DB) migrate(ctx context.Context) error {
 		)`,
 
 		`CREATE INDEX IF NOT EXISTS idx_brief_session_works_session ON brief_session_works (session_id)`,
+
+		`CREATE TABLE IF NOT EXISTS consolidator_surfaced (
+			id          SERIAL PRIMARY KEY,
+			work_id     INT  REFERENCES works(work_id) ON DELETE SET NULL,
+			article_id  TEXT REFERENCES articles(article_id) ON DELETE SET NULL,
+			session_id  TEXT,
+			surfaced_at TIMESTAMPTZ DEFAULT now(),
+			score       REAL
+		)`,
+
+		`CREATE INDEX IF NOT EXISTS idx_consolidator_surfaced_work    ON consolidator_surfaced (work_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_consolidator_surfaced_article ON consolidator_surfaced (article_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_consolidator_surfaced_at      ON consolidator_surfaced (surfaced_at DESC)`,
 		// HNSW indexes on vector(4096) columns can be added manually once the corpus
 		// is large enough to benefit from ANN indexing:
 		//   CREATE INDEX idx_articles_embedding ON articles USING hnsw (embedding vector_cosine_ops);

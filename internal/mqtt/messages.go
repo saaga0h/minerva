@@ -144,6 +144,25 @@ type BriefResponse struct {
 	Works     []BriefWork    `json:"works"`
 }
 
+// ConsolidatorDigest is published by cmd/consolidator to TopicConsolidatorDigest.
+// cmd/notifier subscribes and delivers via ntfy.
+type ConsolidatorDigest struct {
+	SessionID    string    `json:"session_id"`
+	WorkID       int       `json:"work_id"`       // 0 if article-only fallback
+	WorkType     string    `json:"work_type"`
+	Title        string    `json:"title"`
+	Authors      string    `json:"authors"`
+	DOI          string    `json:"doi"`
+	ArXivID      string    `json:"arxiv_id"`
+	ISBN13       string    `json:"isbn13"`
+	PublishYear  int       `json:"publish_year"`
+	ArticleID    string    `json:"article_id"`
+	ArticleURL   string    `json:"article_url"`
+	ArticleTitle string    `json:"article_title"`
+	Score        float32   `json:"score"`
+	SurfacedAt   time.Time `json:"surfaced_at"`
+}
+
 // BriefResult is published by cmd/brief to TopicBriefResult (Minerva-internal).
 // cmd/store subscribes to persist the full session — articles and works ranked by score.
 type BriefResult struct {

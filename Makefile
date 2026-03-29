@@ -6,7 +6,7 @@ BUILD_DIR := ./build
         run-source-freshrss run-source-miniflux run-source-linkwarden \
         run-extractor run-analyzer \
         run-search-openlibrary run-search-arxiv run-search-semantic-scholar run-search-openalex \
-        run-koha-check run-notifier run-store run-state run-brief \
+        run-koha-check run-notifier run-store run-state run-brief run-consolidator \
         trigger digest
 
 # ── Help ──────────────────────────────────────────────────────────────────────
@@ -45,6 +45,7 @@ build: ## Build all primitive binaries
 	go build -o $(BUILD_DIR)/state                   ./cmd/state/
 	go build -o $(BUILD_DIR)/brief                   ./cmd/brief/
 	go build -o $(BUILD_DIR)/trigger                 ./cmd/trigger/
+	go build -o $(BUILD_DIR)/consolidator            ./cmd/consolidator/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
 # ── Code quality ──────────────────────────────────────────────────────────────
@@ -104,7 +105,11 @@ run-koha-check: ## Run Koha ownership check primitive
 	go build -o $(BUILD_DIR)/koha-check ./cmd/koha-check/ && \
 	$(BUILD_DIR)/koha-check -config .env.dev
 
-run-notifier: ## Run notifier primitive (stub — awaiting consolidator)
+run-consolidator: ## Run consolidator batch job (fires immediately, exits)
+	go build -o $(BUILD_DIR)/consolidator ./cmd/consolidator/ && \
+	$(BUILD_DIR)/consolidator -config .env.dev
+
+run-notifier: ## Run notifier primitive — delivers consolidator digests via ntfy
 	go build -o $(BUILD_DIR)/notifier ./cmd/notifier/ && \
 	$(BUILD_DIR)/notifier -config .env.dev
 
