@@ -1,3 +1,37 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json"
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "matchCategories": [
+        "golang"
+      ],
+      "enabled": true
+    },
+    {
+      "matchCategories": ["docker"],
+      "pinDigests": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "groupName": "golang.org/x packages",
+      "groupSlug": "golang-x",
+      "matchPackageNames": [
+        "golang.org/x/{/,}**"
+      ]
+    },
+    {
+      "groupName": "jackc packages",
+      "matchPackageNames": [
+        "github.com/jackc/{/,}**"
+      ]
+    }
+  ],
+  "prConcurrentLimit": 5,
+  "gomod": {
+    "enabled": true
+  }
 }
