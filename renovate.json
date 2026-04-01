@@ -28,10 +28,43 @@
       "matchPackageNames": [
         "github.com/jackc/{/,}**"
       ]
+    },
+    {
+      "matchUpdateTypes": ["patch"],
+      "matchPackagePatterns": ["*"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "matchUpdateTypes": ["minor"],
+      "matchPackagePatterns": ["*"],
+      "minimumReleaseAge": "5 days",
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
+    },
+    {
+      "matchUpdateTypes": ["major"],
+      "automerge": false,
+      "dependencyDashboardApproval": true
+    },
+    {
+      "matchManagers": ["dockerfile", "docker-compose"],
+      "automerge": false
+    },
+    {
+      "matchPackagePrefixes": ["golang.org/x/"],
+      "groupName": "golang.org/x packages",
+      "automerge": true,
+      "minimumReleaseAge": "3 days"
     }
   ],
   "prConcurrentLimit": 5,
   "gomod": {
     "enabled": true
+  },
+  "docker": {
+    "pinDigests": true
   }
 }
