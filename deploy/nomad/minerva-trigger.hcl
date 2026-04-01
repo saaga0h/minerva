@@ -5,7 +5,7 @@
 # a primitive connects are lost.
 #
 # Force an immediate run:
-#   curl -X POST http://192.168.10.42:4646/v1/job/minerva-trigger/periodic/force
+#   curl -X POST http://nomad.server:4646/v1/job/minerva-trigger/periodic/force
 
 job "minerva-trigger" {
   datacenters = ["the-collective"]

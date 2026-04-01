@@ -7,7 +7,7 @@
 # and before morning reading time.
 #
 # Force an immediate run:
-#   curl -X POST http://192.168.10.42:4646/v1/job/minerva-consolidator/periodic/force
+#   curl -X POST http://namad.server:4646/v1/job/minerva-consolidator/periodic/force
 
 job "minerva-consolidator" {
   datacenters = ["the-collective"]
