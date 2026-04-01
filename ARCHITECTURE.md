@@ -155,7 +155,7 @@ sequenceDiagram
     SEARCH->>MQTT: WorkCandidates (works/candidates)
 
     MQTT->>KC: WorkCandidates
-    KC->>KC: skip non-books; Koha ISBN lookup for books
+    KC->>KC: skip non-books, Koha ISBN lookup for books
     KC->>MQTT: CheckedWorks (works/checked)
 
     MQTT->>ST: CheckedWorks (and earlier stages)
@@ -164,7 +164,7 @@ sequenceDiagram
     ST->>DB: MarkCompleteByArticleID
     ST->>MQTT: ArticleComplete (articles/complete)
 
-    MQTT->>SRC: ArticleComplete → mark URL done
+    MQTT->>SRC: ArticleComplete, mark URL done
 ```
 
 ### Crash Recovery (State Primitive)
