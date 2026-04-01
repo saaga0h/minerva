@@ -125,7 +125,7 @@ sequenceDiagram
     participant EX as extractor
     participant AN as analyzer
     participant Ollama
-    participant SEARCH as search-* (parallel)
+    participant SEARCH as search-* parallel
     participant KC as koha-check
     participant ST as store
     participant DB as Postgres
@@ -173,7 +173,7 @@ sequenceDiagram
 sequenceDiagram
     participant TRIGGER as trigger
     participant STA as state
-    participant DB as Postgres (statestore)
+    participant DB as Postgres statestore
     participant MQTT
 
     note over STA: During normal operation
