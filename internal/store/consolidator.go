@@ -170,19 +170,25 @@ func (db *DB) aggregateArticles(ctx context.Context, lookbackHours int, topN int
 }
 
 // IsAlreadySurfaced returns true if the given work or article was surfaced
-// within the last dedupHours hours. If dedupHours == 0, always returns false.
+// within the last dedupHours hours. If dedupHours == 0, checks all time (never re-surface).
 func (db *DB) IsAlreadySurfaced(ctx context.Context, workID int, articleID string, dedupHours int) (bool, error) {
+	var q string
 	if dedupHours == 0 {
-		return false, nil
+		q = `
+			SELECT EXISTS (
+				SELECT 1 FROM consolidator_surfaced
+				WHERE ($1::int > 0 AND work_id = $1) OR ($2 != '' AND article_id = $2)
+			)
+		`
+	} else {
+		q = fmt.Sprintf(`
+			SELECT EXISTS (
+				SELECT 1 FROM consolidator_surfaced
+				WHERE surfaced_at > now() - interval '%d hours'
+				  AND (($1::int > 0 AND work_id = $1) OR ($2 != '' AND article_id = $2))
+			)
+		`, dedupHours)
 	}
-
-	q := fmt.Sprintf(`
-		SELECT EXISTS (
-			SELECT 1 FROM consolidator_surfaced
-			WHERE surfaced_at > now() - interval '%d hours'
-			  AND (($1::int > 0 AND work_id = $1) OR ($2 != '' AND article_id = $2))
-		)
-	`, dedupHours)
 	var exists bool
 	if err := db.pool.QueryRow(ctx, q, workID, articleID).Scan(&exists); err != nil {
 		return false, fmt.Errorf("check surfaced: %w", err)
