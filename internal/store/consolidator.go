@@ -49,10 +49,14 @@ func (db *DB) AggregateSessionScores(ctx context.Context, lookbackHours int, top
 }
 
 func (db *DB) aggregateWorks(ctx context.Context, lookbackHours int, topN int) ([]ScoredWork, error) {
-	var timeFilter string
+	var sessionFilter string
+	var dedupFilter string
 	var args []any
 	if lookbackHours > 0 {
-		timeFilter = fmt.Sprintf("AND bs.queried_at > now() - interval '%d hours'", lookbackHours)
+		sessionFilter = fmt.Sprintf("AND bs.queried_at > now() - interval '%d hours'", lookbackHours)
+		dedupFilter = fmt.Sprintf("AND NOT EXISTS (SELECT 1 FROM consolidator_surfaced cs WHERE cs.work_id = bsw.work_id AND cs.surfaced_at > now() - interval '%d hours')", lookbackHours)
+	} else {
+		dedupFilter = "AND NOT EXISTS (SELECT 1 FROM consolidator_surfaced cs WHERE cs.work_id = bsw.work_id)"
 	}
 
 	q := fmt.Sprintf(`
@@ -70,6 +74,7 @@ func (db *DB) aggregateWorks(ctx context.Context, lookbackHours int, topN int) (
 			FROM brief_session_works bsw
 			JOIN brief_sessions bs ON bs.session_id = bsw.session_id
 			WHERE bsw.work_id IS NOT NULL
+			%s
 			%s
 			GROUP BY bsw.work_id
 			ORDER BY max_score DESC
@@ -99,7 +104,7 @@ func (db *DB) aggregateWorks(ctx context.Context, lookbackHours int, topN int) (
 			LIMIT 1
 		) bsa ON true
 		ORDER BY ms.max_score DESC
-	`, timeFilter)
+	`, sessionFilter, dedupFilter)
 
 	args = append(args, topN)
 	rows, err := db.pool.Query(ctx, q, args...)
