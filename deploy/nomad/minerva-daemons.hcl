@@ -343,46 +343,6 @@ EOT
       }
     }
 
-    # ── search-semantic-scholar ───────────────────────────────────────────────
-
-    task "search-semantic-scholar" {
-      driver = "raw_exec"
-      config {
-        command = "/bin/sh"
-        args    = ["-c", "chmod +x ${NOMAD_TASK_DIR}/search-semantic-scholar && exec ${NOMAD_TASK_DIR}/search-semantic-scholar"]
-      }
-      artifact {
-        source      = "${NOMAD_META_artifact_base}/${attr.cpu.arch}/search-semantic-scholar"
-        destination = "local/search-semantic-scholar"
-        mode        = "file"
-      }
-      template {
-        destination = "secrets/minerva.env"
-        env         = true
-        data        = <<EOT
-{{ with secret "secret/data/nomad/minerva" }}
-MQTT_BROKER_URL={{ .Data.data.MQTT_BROKER_URL }}
-MQTT_USER={{ .Data.data.MQTT_USER }}
-MQTT_PASSWORD={{ .Data.data.MQTT_PASSWORD }}
-SEMANTIC_SCHOLAR_TIMEOUT={{ .Data.data.SEMANTIC_SCHOLAR_TIMEOUT }}
-SEMANTIC_SCHOLAR_API_KEY={{ .Data.data.SEMANTIC_SCHOLAR_API_KEY }}
-LOG_LEVEL={{ .Data.data.LOG_LEVEL }}
-{{ end }}
-EOT
-      }
-      vault {
-        policies = ["minerva"]
-      }
-      resources {
-        cpu    = 100
-        memory = 64
-      }
-      service {
-        name = "minerva-search-semantic-scholar"
-        tags = ["minerva"]
-      }
-    }
-
     # ── search-openalex ───────────────────────────────────────────────────────
 
     task "search-openalex" {
