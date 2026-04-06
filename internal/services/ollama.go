@@ -77,8 +77,13 @@ func NewOllama(cfg config.OllamaConfig) *Ollama {
 	}
 }
 
-// ProcessContentMultiPass performs multi-pass analysis with optional debugging
-func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, debug bool) (*MultiPassResult, error) {
+// ChatFn is a function that sends a prompt and returns the response text.
+// Used to swap in Forge-routed chat without changing the multi-pass logic.
+type ChatFn func(prompt string) (string, error)
+
+// ProcessContentMultiPass performs multi-pass analysis with optional debugging.
+// chatFn is called for each pass — pass ollama.GenerateCompletion or a Forge wrapper.
+func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, debug bool, chatFn ChatFn) (*MultiPassResult, error) {
 	o.logger.WithFields(logrus.Fields{
 		"article_id": articleID,
 		"title":      title,
@@ -95,7 +100,7 @@ func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, d
 
 	// Pass 1: Classify the article
 	o.logger.Debug("Pass 1: Classifying article")
-	pass1, err := o.classifyArticle(title, content, articleID, debug)
+	pass1, err := o.classifyArticle(title, content, articleID, debug, chatFn)
 	if err != nil {
 		return nil, fmt.Errorf("pass 1 failed: %w", err)
 	}
@@ -103,7 +108,7 @@ func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, d
 
 	// Pass 2: Extract entities (using Pass 1 context)
 	o.logger.WithField("domain", pass1.Domain).Debug("Pass 2: Extracting entities")
-	pass2, err := o.extractEntities(title, content, pass1, articleID, debug)
+	pass2, err := o.extractEntities(title, content, pass1, articleID, debug, chatFn)
 	if err != nil {
 		return nil, fmt.Errorf("pass 2 failed: %w", err)
 	}
@@ -111,7 +116,7 @@ func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, d
 
 	// Pass 3: Extract concepts (using Pass 1 + 2 context)
 	o.logger.Debug("Pass 3: Extracting concepts")
-	pass3, err := o.extractConcepts(title, content, pass1, pass2, articleID, debug)
+	pass3, err := o.extractConcepts(title, content, pass1, pass2, articleID, debug, chatFn)
 	if err != nil {
 		return nil, fmt.Errorf("pass 3 failed: %w", err)
 	}
@@ -135,7 +140,7 @@ func (o *Ollama) ProcessContentMultiPass(title, content string, articleID int, d
 }
 
 // classifyArticle - Pass 1: Domain and topic classification
-func (o *Ollama) classifyArticle(title, content string, articleID int, debug bool) (ClassificationResult, error) {
+func (o *Ollama) classifyArticle(title, content string, articleID int, debug bool, chatFn ChatFn) (ClassificationResult, error) {
 	prompt := fmt.Sprintf(`Classify this article. Output ONLY valid JSON, no other text.
 
 Title: %s
@@ -155,7 +160,7 @@ JSON:`, title, content)
 		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass1-prompt.txt", articleID), []byte(prompt), 0644)
 	}
 
-	response, err := o.generateCompletion(prompt)
+	response, err := chatFn(prompt)
 	if err != nil {
 		return ClassificationResult{}, err
 	}
@@ -190,7 +195,7 @@ JSON:`, title, content)
 }
 
 // extractEntities - Pass 2: Named entity extraction based on domain
-func (o *Ollama) extractEntities(title, content string, classification ClassificationResult, articleID int, debug bool) (EntityResult, error) {
+func (o *Ollama) extractEntities(title, content string, classification ClassificationResult, articleID int, debug bool, chatFn ChatFn) (EntityResult, error) {
 	prompt := fmt.Sprintf(`This is a %s article about: %s
 
 Title: %s
@@ -219,7 +224,7 @@ JSON:`, classification.Domain, classification.Topic, title, content, classificat
 		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass2-prompt.txt", articleID), []byte(prompt), 0644)
 	}
 
-	response, err := o.generateCompletion(prompt)
+	response, err := chatFn(prompt)
 	if err != nil {
 		return EntityResult{}, err
 	}
@@ -256,7 +261,7 @@ JSON:`, classification.Domain, classification.Topic, title, content, classificat
 }
 
 // extractConcepts - Pass 3: Conceptual understanding and related topics
-func (o *Ollama) extractConcepts(title, content string, classification ClassificationResult, entities EntityResult, articleID int, debug bool) (ConceptResult, error) {
+func (o *Ollama) extractConcepts(title, content string, classification ClassificationResult, entities EntityResult, articleID int, debug bool, chatFn ChatFn) (ConceptResult, error) {
 	prompt := fmt.Sprintf(`This is a %s article about: %s
 
 We've identified these entities:
@@ -294,7 +299,7 @@ JSON:`, classification.Domain, classification.Topic,
 		os.WriteFile(fmt.Sprintf("./debug/article-%d-pass3-prompt.txt", articleID), []byte(prompt), 0644)
 	}
 
-	response, err := o.generateCompletion(prompt)
+	response, err := chatFn(prompt)
 	if err != nil {
 		return ConceptResult{}, err
 	}
@@ -352,8 +357,8 @@ Important:
 JSON Response:`, title, content)
 }
 
-// generateCompletion sends a request to Ollama and returns the response
-func (o *Ollama) generateCompletion(prompt string) (string, error) {
+// GenerateCompletion sends a prompt to Ollama /api/generate and returns the response text.
+func (o *Ollama) GenerateCompletion(prompt string) (string, error) {
 	reqBody := OllamaRequest{
 		Model:  o.config.Model,
 		Prompt: prompt,

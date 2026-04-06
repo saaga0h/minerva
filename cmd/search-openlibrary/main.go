@@ -11,6 +11,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/saaga0h/minerva/internal/config"
+	"github.com/saaga0h/minerva/internal/forge"
 	mqttclient "github.com/saaga0h/minerva/internal/mqtt"
 	"github.com/saaga0h/minerva/internal/services"
 	"github.com/saaga0h/minerva/pkg/logger"
@@ -56,9 +57,20 @@ func main() {
 	openLibrary := services.NewOpenLibrary(cfg.OpenLibrary)
 	openLibrary.SetLogger(log)
 
-	// Ollama client for embedding — no mutex needed, embed is concurrent-safe
+	// ForgeClient for embedding — routes through Forge GPU queue when FORGE_ENABLED=true,
+	// falls back to direct Ollama when FORGE_ENABLED=false.
 	ollama := services.NewOllama(cfg.Ollama)
 	ollama.SetLogger(log)
+	forgeClient, err := forge.New(cfg.Forge, forge.BrokerConfig{
+		BrokerURL: brokerURL,
+		ClientID:  "forge-" + clientID,
+		Username:  getEnv("MQTT_USER", ""),
+		Password:  getEnv("MQTT_PASSWORD", ""),
+	}, ollama, log)
+	if err != nil {
+		log.WithError(err).Fatal("Failed to create Forge client")
+	}
+	defer forgeClient.Disconnect()
 
 	// Subscribe to analyzed articles — search for book recommendations
 	if err := mqttClient.Subscribe(mqttclient.TopicArticlesAnalyzed, func(payload []byte) {
@@ -91,7 +103,7 @@ func main() {
 			for _, rec := range recommendations {
 				// Best-effort embedding: title only (no abstract from OpenLibrary).
 				// On failure, nil embedding — work still publishes.
-				embedding, embedErr := ollama.Embed(rec.Title)
+				embedding, embedErr := forgeClient.Embed(rec.Title)
 				if embedErr != nil {
 					log.WithError(embedErr).WithFields(logrus.Fields{
 						"article_id":      msg.ArticleID,

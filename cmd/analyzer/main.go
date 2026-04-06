@@ -13,6 +13,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/saaga0h/minerva/internal/config"
+	"github.com/saaga0h/minerva/internal/forge"
 	mqttclient "github.com/saaga0h/minerva/internal/mqtt"
 	"github.com/saaga0h/minerva/internal/services"
 	"github.com/saaga0h/minerva/pkg/logger"
@@ -60,6 +61,30 @@ func main() {
 	ollama := services.NewOllama(cfg.Ollama)
 	ollama.SetLogger(log)
 
+	// ForgeClient — routes chat through Forge GPU queue when FORGE_ENABLED=true.
+	forgeClient, err := forge.New(cfg.Forge, forge.BrokerConfig{
+		BrokerURL: brokerURL,
+		ClientID:  "forge-" + clientID,
+		Username:  getEnv("MQTT_USER", ""),
+		Password:  getEnv("MQTT_PASSWORD", ""),
+	}, ollama, log)
+	if err != nil {
+		log.WithError(err).Fatal("Failed to create Forge client")
+	}
+	defer forgeClient.Disconnect()
+
+	// chatFn routes each pass through Forge when enabled, falls back to direct Ollama.
+	chatFn := services.ChatFn(func(prompt string) (string, error) {
+		return forgeClient.Chat(prompt, "", cfg.Forge.ChatModel, cfg.Ollama.MaxTokens, cfg.Ollama.Temperature)
+	})
+
+	// embedFn routes embeddings through Forge when enabled.
+	embedFn := func(text string) ([]float32, error) {
+		return forgeClient.Embed(text)
+	}
+
+	// ollamaMu serialises chat passes when FORGE_ENABLED=false (direct Ollama).
+	// Keep until Forge chat is confirmed stable in production — remove in follow-up.
 	var ollamaMu sync.Mutex
 
 	// Subscribe to extracted articles — run multi-pass LLM analysis
@@ -81,7 +106,7 @@ func main() {
 			// Use article_id as a numeric-ish identifier for debug file naming
 			debugID := 0
 			ollamaMu.Lock()
-			multiPass, err := ollama.ProcessContentMultiPass(msg.Title, msg.Content, debugID, debugOllama)
+			multiPass, err := ollama.ProcessContentMultiPass(msg.Title, msg.Content, debugID, debugOllama, chatFn)
 			ollamaMu.Unlock()
 			if err != nil {
 				log.WithError(err).WithField("article_id", msg.ArticleID).Warn("Ollama analysis failed — article dropped for this run")
@@ -115,7 +140,7 @@ func main() {
 			embedText := multiPass.Pass1.Topic + " " +
 				strings.Join(uniqueKeywords, " ") + " " +
 				strings.Join(multiPass.Pass3.Concepts, " ")
-			embedding, embedErr := ollama.Embed(embedText)
+			embedding, embedErr := embedFn(embedText)
 			if embedErr != nil {
 				log.WithError(embedErr).WithField("article_id", msg.ArticleID).Warn("Embed failed — continuing without embedding")
 				embedding = nil

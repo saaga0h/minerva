@@ -14,6 +14,7 @@ type Config struct {
 	FreshRSS        FreshRSSConfig        `json:"fresh_rss"`
 	Linkwarden      LinkwardenConfig      `json:"linkwarden"`
 	Ollama          OllamaConfig          `json:"ollama"`
+	Forge           ForgeConfig           `json:"forge"`
 	Brief           BriefConfig           `json:"brief"`
 	SearXNG         SearXNGConfig         `json:"searxng"`
 	OpenLibrary     OpenLibraryConfig     `json:"openlibrary"`
@@ -70,6 +71,13 @@ type OllamaConfig struct {
 	Timeout     int     `json:"timeout" env:"OLLAMA_TIMEOUT" default:"300"`
 	MaxTokens   int     `json:"max_tokens" env:"OLLAMA_MAX_TOKENS" default:"2048"`
 	Temperature float64 `json:"temperature" env:"OLLAMA_TEMPERATURE" default:"0.7"`
+}
+
+type ForgeConfig struct {
+	Timeout    int    `json:"timeout"`     // FORGE_TIMEOUT seconds, default 300
+	EmbedModel string `json:"embed_model"` // FORGE_EMBED_MODEL, default "qwen3-embedding:8b"
+	ChatModel  string `json:"chat_model"`  // FORGE_CHAT_MODEL
+	Enabled    bool   `json:"enabled"`     // FORGE_ENABLED
 }
 
 type BriefConfig struct {
@@ -162,6 +170,12 @@ func Load(configPath string) (*Config, error) {
 			Timeout:     getEnvInt("OLLAMA_TIMEOUT", 300),
 			MaxTokens:   getEnvInt("OLLAMA_MAX_TOKENS", 2048),
 			Temperature: getEnvFloat("OLLAMA_TEMPERATURE", 0.7),
+		},
+		Forge: ForgeConfig{
+			Timeout:    getEnvInt("FORGE_TIMEOUT", 300),
+			EmbedModel: getEnv("FORGE_EMBED_MODEL", "qwen3-embedding:8b"),
+			ChatModel:  getEnv("FORGE_CHAT_MODEL", getEnv("OLLAMA_MODEL", "llama2")),
+			Enabled:    getEnv("FORGE_ENABLED", "false") == "true",
 		},
 		Brief: BriefConfig{
 			MinScore: getEnvFloat("BRIEF_MIN_SCORE", 0.0),

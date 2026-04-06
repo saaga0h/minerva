@@ -46,6 +46,7 @@ build: ## Build all primitive binaries
 	go build -o $(BUILD_DIR)/brief                   ./cmd/brief/
 	go build -o $(BUILD_DIR)/trigger                 ./cmd/trigger/
 	go build -o $(BUILD_DIR)/consolidator            ./cmd/consolidator/
+	go build -o $(BUILD_DIR)/reembed-works           ./cmd/reembed-works/
 	@echo "Done. Binaries in $(BUILD_DIR)/"
 
 # ── Code quality ──────────────────────────────────────────────────────────────
