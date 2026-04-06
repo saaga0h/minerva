@@ -147,13 +147,13 @@ These keywords drive external search: each search primitive queries its API usin
 
 ### Serialization Constraint
 
-Ollama handles one inference at a time. All three passes per article are serialized by the analyzer's `sync.Mutex`. With a 300-second timeout per pass, a single article can occupy the analyzer for up to 15 minutes. This is the intended behavior — depth of extraction is preferred over throughput.
+In production with `FORGE_ENABLED=true`, all three passes per article are serialized at the infrastructure level by Forge, which queues jobs through Nomad parameterized batch workers. The analyzer calls `forgeClient.Chat()` synchronously, which is non-blocking from the analyzer's perspective. The `sync.Mutex` in the analyzer is retained as a safety net fallback for when `FORGE_ENABLED=false` (development using direct Ollama), where direct Ollama calls are serialized locally.
 
-The total pipeline is bounded by the number of articles in the trigger window, not by any external rate limit.
+With a 300-second timeout per pass, a single article can occupy the analyzer for up to 15 minutes. This is the intended behavior — depth of extraction is preferred over throughput. The total pipeline is bounded by the number of articles in the trigger window, not by any external rate limit.
 
 ### Embedding as a Post-Analysis Product
 
-After the three passes, the analyzer calls Ollama's `/api/embed` endpoint on the concatenation of `topic + keywords + concepts` (Pass 1 topic + derived keywords). This produces a 4096-dimensional float32 vector that is attached to the article and persisted for later vector search. The embedding is best-effort: if Ollama is unavailable or times out, a nil embedding is stored and the article proceeds through the pipeline. Vector search will silently skip nil-embedding articles; keyword search remains available.
+After the three passes, the analyzer calls Forge (or directly Ollama when `FORGE_ENABLED=false`) to embed the concatenation of `topic + keywords + concepts` (Pass 1 topic + derived keywords). This produces a 4096-dimensional float32 vector that is attached to the article and persisted for later vector search. The embedding is best-effort: if embedding is unavailable or times out, a nil embedding is stored and the article proceeds through the pipeline. Vector search will silently skip nil-embedding articles; keyword search remains available.
 
 ---
 
@@ -344,7 +344,7 @@ The notifier sends to a single ntfy topic. There is no fan-out, no per-user conf
 
 ### Embedding Soft Failures
 
-Embedding calls are best-effort throughout. If Ollama is unavailable when an article is analyzed, a nil embedding is stored. The article proceeds through the pipeline and is available for keyword search. This decision prioritizes pipeline throughput over completeness of the vector index. A `reembed`-style tool exists in the Journal system for retroactive re-embedding; the equivalent for Minerva would follow the same pattern.
+Embedding calls are best-effort throughout. If embedding is unavailable when an article is analyzed, a nil embedding is stored. The article proceeds through the pipeline and is available for keyword search. This decision prioritizes pipeline throughput over completeness of the vector index. Minerva includes a `cmd/reembed-works` one-shot tool and `deploy/nomad/minerva-reembed-works.hcl` batch job for retroactive re-embedding of articles with null embeddings.
 
 ### Koha Ownership as a Filter, Not a Gate
 

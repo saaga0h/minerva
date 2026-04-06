@@ -33,7 +33,7 @@ These ideas are offered freely. The mechanisms described here are documented in 
 
 - Go 1.21+
 - Docker + Docker Compose (for Mosquitto and PostgreSQL)
-- [Ollama](https://ollama.com) running on the host with `qwen3-embedding:8b` pulled
+- [Ollama](https://ollama.com) running on the host with `qwen3-embedding:8b` pulled (used as fallback when `FORGE_ENABLED=false`, or required in production when `FORGE_ENABLED=true`)
 - Miniflux, FreshRSS, or Linkwarden instance (at least one source)
 - Koha library system (optional)
 - ntfy server (optional)
@@ -104,6 +104,10 @@ Copy `.env.example` to `.env.dev`. Key variables:
 | `DB_HOST` / `DB_PORT` | `localhost:5432` | PostgreSQL |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama on host (not in Docker) |
 | `OLLAMA_EMBED_MODEL` | `qwen3-embedding:8b` | Must produce 4096-dim vectors |
+| `FORGE_ENABLED` | `false` | Enable Forge GPU compute queue (production) or use direct Ollama (development) |
+| `FORGE_EMBED_MODEL` | `qwen3-embedding:8b` | Embedding model when using Forge |
+| `FORGE_CHAT_MODEL` | — | LLM chat model when using Forge |
+| `FORGE_TIMEOUT` | `300s` | Timeout per Forge inference job |
 | `MINIFLUX_BASE_URL` | — | Miniflux instance URL |
 | `MINIFLUX_API_KEY` | — | Miniflux API key |
 | `FRESHRSS_BASE_URL` | — | FreshRSS Fever API endpoint |
@@ -160,12 +164,14 @@ minerva/
 │   ├── brief/                    # Semantic retrieval (vector ANN + keyword)
 │   ├── consolidator/             # Score aggregation + notification dedup
 │   ├── notifier/                 # ntfy push notifications
+│   ├── reembed-works/            # One-shot backfill tool for null embeddings
 │   └── trigger/                  # One-shot pipeline trigger
 ├── internal/
 │   ├── config/                   # Environment-based configuration
 │   ├── mqtt/                     # Shared MQTT contract (topics, messages, client)
 │   ├── store/                    # PostgreSQL knowledge base (articles, works, sessions)
 │   ├── statestore/               # PostgreSQL crash-recovery state
+│   ├── forge/                    # Forge GPU compute queue client (MQTT-native)
 │   └── services/                 # HTTP clients for external APIs
 ├── pkg/logger/                   # Structured logging
 ├── deploy/nomad/                 # Nomad job definitions

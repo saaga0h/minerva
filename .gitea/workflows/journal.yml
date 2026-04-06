@@ -4,6 +4,7 @@
 # Prerequisites:
 #   - Self-hosted runner with network access to Postgres, MQTT, and Ollama
 #   - Runner has git on PATH
+#   - Gitea repo variables: ARTIFACT_BASE (artifact server base URL for minerva binaries)
 #   - Gitea repo secrets: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME, DB_SSLMODE,
 #     MQTT_BROKER_URL, MQTT_USER, MQTT_PASSWORD,
 #     OLLAMA_BASE_URL, OLLAMA_EMBED_MODEL, OLLAMA_CHAT_MODEL, OLLAMA_CHAT_NUM_CTX
@@ -27,9 +28,11 @@ jobs:
           fetch-depth: 0
 
       - name: Download concept-extract binary
+        env:
+          ARTIFACT_BASE: ${{ vars.ARTIFACT_BASE }}
         run: |
           curl -fsSL -o /tmp/concept-extract \
-            "http://192.168.10.50:8080/api/binaries/journal/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')/concept-extract"
+            "${ARTIFACT_BASE%/minerva}/journal/$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')/concept-extract"
           chmod +x /tmp/concept-extract
 
       - name: Extract concepts

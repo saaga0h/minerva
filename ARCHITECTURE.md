@@ -30,7 +30,7 @@ Minerva is a pipeline system that transforms RSS starred articles and bookmarks 
 
 1. **MQTT-native**: all inter-primitive communication via message broker. No direct function calls, no shared state between primitives.
 2. **Postgres with pgvector**: all persistent state, including 4096-dimensional embedding vectors, lives in a single PostgreSQL database.
-3. **Ollama on host**: all LLM inference and embedding runs locally via Ollama, with no external API dependencies beyond search sources.
+3. **Forge GPU compute queue (production) or Ollama on host (development)**: in production, all LLM inference and embedding runs through Forge, an MQTT-native GPU compute orchestrator that queues jobs through Nomad batch workers. In development (`FORGE_ENABLED=false`), inference runs directly via local Ollama with no external API dependencies beyond search sources.
 
 ```mermaid
 graph TD
@@ -45,13 +45,20 @@ graph TD
     MQTT -->|articles/raw| EX[extractor]
     EX -->|ExtractedArticle| MQTT
     MQTT -->|articles/extracted| AN[analyzer]
-    AN -->|Ollama 3-pass| OLLAMA[Ollama]
+    AN -->|Forge/Ollama| FORGE[Forge<br/>GPU Queue]
+    FORGE -->|3-pass chat| OLLAMA[Ollama]
     AN -->|AnalyzedArticle| MQTT
 
     MQTT -->|articles/analyzed| SOL[search-openlibrary]
     MQTT -->|articles/analyzed| SAX[search-arxiv]
     MQTT -->|articles/analyzed| SS[search-semantic-scholar]
     MQTT -->|articles/analyzed| SOA[search-openalex]
+
+    SOL -->|Forge/Ollama| FORGE[Forge<br/>GPU Queue]
+    SAX -->|Forge/Ollama| FORGE
+    SS -->|Forge/Ollama| FORGE
+    SOA -->|Forge/Ollama| FORGE
+    FORGE -->|embed| OLLAMA
 
     SOL -->|WorkCandidates| MQTT
     SAX -->|WorkCandidates| MQTT
@@ -93,7 +100,7 @@ graph TD
 | `source-miniflux` | Fetches starred entries from Miniflux; same dedup pattern | MQTT: `minerva/pipeline/trigger`, `minerva/articles/complete` |
 | `source-linkwarden` | Fetches bookmarks from Linkwarden; pagination cursor-based | MQTT: `minerva/pipeline/trigger`, `minerva/articles/complete` |
 | `extractor` | Fetches and cleans article text; skips fetch if content pre-supplied | MQTT: `minerva/articles/raw` |
-| `analyzer` | Three-pass Ollama LLM analysis; serialized via mutex | MQTT: `minerva/articles/extracted` |
+| `analyzer` | Three-pass LLM analysis via Forge (or direct Ollama when FORGE_ENABLED=false); serialized via mutex when FORGE_ENABLED=false, Forge handles serialization when enabled | MQTT: `minerva/articles/extracted` |
 | `search-openlibrary` | Book search via OpenLibrary API | MQTT: `minerva/articles/analyzed` |
 | `search-arxiv` | Preprint search via arXiv API; rate-limited queue (6s gap) | MQTT: `minerva/articles/analyzed` |
 | `search-semantic-scholar` | Academic paper search; rate-limited queue (~1 req/s) | MQTT: `minerva/articles/analyzed` |
@@ -111,6 +118,7 @@ graph TD
 | Binary | Role | When Run |
 |--------|------|----------|
 | `trigger` | Publishes `BriefTrigger` to start a pipeline run | Cron or manual |
+| `reembed-works` | One-shot backfill tool; re-embeds articles with null embeddings via Forge (or Ollama) | Manual or via `deploy/nomad/minerva-reembed-works.hcl` |
 
 ---
 
@@ -139,19 +147,20 @@ sequenceDiagram
     EX->>MQTT: ExtractedArticle (articles/extracted)
 
     MQTT->>AN: ExtractedArticle
-    AN->>Ollama: Pass 1: classify
-    Ollama-->>AN: domain, type, topic
-    AN->>Ollama: Pass 2: entities (scoped by domain)
-    Ollama-->>AN: facilities, people, locations, phenomena
-    AN->>Ollama: Pass 3: concepts + related_topics
-    Ollama-->>AN: concepts[], related_topics[]
-    AN->>Ollama: Embed(topic + keywords + concepts)
-    Ollama-->>AN: []float32 (4096-dim)
+    AN->>FORGE: Pass 1: classify (or direct Ollama if FORGE_ENABLED=false)
+    FORGE-->>AN: domain, type, topic
+    AN->>FORGE: Pass 2: entities (scoped by domain)
+    FORGE-->>AN: facilities, people, locations, phenomena
+    AN->>FORGE: Pass 3: concepts + related_topics
+    FORGE-->>AN: concepts[], related_topics[]
+    AN->>FORGE: Embed(topic + keywords + concepts)
+    FORGE-->>AN: []float32 (4096-dim)
     AN->>MQTT: AnalyzedArticle (articles/analyzed)
 
     MQTT->>SEARCH: AnalyzedArticle (all 4 search primitives receive)
     SEARCH->>SEARCH: search by keywords + insights (rate-limited)
-    SEARCH->>Ollama: Embed(title + abstract) per candidate
+    SEARCH->>FORGE: Embed(title + abstract) per candidate (or direct Ollama if FORGE_ENABLED=false)
+    FORGE-->>SEARCH: []float32 (4096-dim)
     SEARCH->>MQTT: WorkCandidates (works/candidates)
 
     MQTT->>KC: WorkCandidates
@@ -524,7 +533,7 @@ Post-processing:
 
 ### Serialization
 
-All Ollama calls within the analyzer are serialized by a `sync.Mutex`. Timeout per pass: 300 seconds. Maximum per article: 900 seconds (15 minutes). This is the intended constraint — the system is designed for quality of extraction, not throughput.
+When `FORGE_ENABLED=true`, all LLM calls are queued through Forge, which handles serialization at the infrastructure level via Nomad batch workers. The analyzer calls `forgeClient.Chat()` synchronously; Forge manages the queue. When `FORGE_ENABLED=false`, all Ollama calls within the analyzer are serialized by a `sync.Mutex`. Timeout per pass: 300 seconds. Maximum per article: 900 seconds (15 minutes). This is the intended constraint — the system is designed for quality of extraction, not throughput.
 
 ### Debug Output
 
@@ -707,9 +716,10 @@ Job definitions in `deploy/nomad/`. Secrets via Vault. Artifacts served via arti
 
 ### External Dependencies
 
-- **Ollama** (host): LLM inference and embedding. Model `qwen3-embedding:8b` must be pulled. Must be running before analyzer or any embedding-dependent path starts.
+- **Forge** (production): MQTT-native GPU compute queue. Required when `FORGE_ENABLED=true`. Routes LLM inference and embedding jobs through Nomad parameterized batch workers. If Forge broker is unreachable, `forge.New()` fails immediately (no deferred connection).
+- **Ollama** (host): LLM inference and embedding. Model `qwen3-embedding:8b` must be pulled. Required when `FORGE_ENABLED=false` (development). When `FORGE_ENABLED=true` (production), Ollama is still required as the backend compute target but accessed through Forge.
 - **PostgreSQL**: Required before source primitives, store, and state start. `pgxpool` is concurrency-safe; no mutex needed around store calls.
-- **Mosquitto**: Required before any primitive starts.
+- **Mosquitto**: Required before any primitive starts. Forge uses the same broker with a separate connection (`CleanSession=false`, ClientID prefixed "forge-").
 - **FreshRSS / Miniflux / Linkwarden**: Configured via `FRESHRSS_*`, `MINIFLUX_*`, `LINKWARDEN_*` environment variables. Unreachable API causes source primitive to log and skip, not crash.
 - **Koha** (optional): If `KOHA_BASE_URL` is unset, koha-check passes all works through as `NewWorks`.
 - **ntfy** (optional): If notifier is not running, consolidator output is simply not delivered.
@@ -724,7 +734,7 @@ Job definitions in `deploy/nomad/`. Secrets via Vault. Artifacts served via arti
 
 3. **All MQTT handlers dispatch goroutines**: No blocking work (DB, HTTP, Ollama, Publish) is performed inside a handler. The copy-then-goroutine pattern is used throughout without exception.
 
-4. **Ollama calls are serialized per primitive**: The analyzer uses a single `sync.Mutex` for all Ollama calls. Search primitives serialize via single-worker queues. Concurrent Ollama requests time out; this serialization is a constraint.
+4. **LLM calls are serialized**: In production with `FORGE_ENABLED=true`, Forge handles serialization at the infrastructure level through Nomad batch workers. In development with `FORGE_ENABLED=false`, the analyzer uses a single `sync.Mutex` for all Ollama calls, and search primitives serialize via single-worker queues. Concurrent requests time out; this serialization is a constraint.
 
 5. **Canonical ID priority**: `isbn13:{x}` > `doi:{x}` > `arxiv:{x}` > `ref:{reference_id}`. The upsert merge preserves all reference IDs in the array; the canonical ID is determined by the highest-priority identifier available from any source.
 
@@ -744,9 +754,11 @@ Job definitions in `deploy/nomad/`. Secrets via Vault. Artifacts served via arti
 
 `CleanSession=true` is the most operationally fragile aspect of the system. A trigger fired before all primitives are running drops messages with no error indication. The `state` primitive partially mitigates this by enabling replay, but the state primitive itself must be running before the trigger fires to record the initial messages.
 
-### Ollama Serialization Bottleneck
+### LLM Serialization Bottleneck
 
-All Ollama calls are serialized. A batch of 10 articles with 3 passes each at 300s timeout = theoretical maximum of 150 minutes of analyzer time. In practice passes are much shorter, but burst ingestion is bounded by single-thread Ollama throughput.
+When `FORGE_ENABLED=false` (development), all Ollama calls are serialized locally. A batch of 10 articles with 3 passes each at 300s timeout = theoretical maximum of 150 minutes of analyzer time. In practice passes are much shorter, but burst ingestion is bounded by single-thread Ollama throughput.
+
+When `FORGE_ENABLED=true` (production), Forge queues jobs through Nomad batch workers, mitigating the bottleneck at the infrastructure level. The serialization constraint applies only to local development.
 
 ### No HNSW Indexes by Default
 
